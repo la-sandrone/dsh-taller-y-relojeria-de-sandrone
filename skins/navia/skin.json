@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schemas.linxin666.org/dsh-skin/v2.json",
+  "skinManifestVersion": 2,
+  "id": "navia",
+  "name": "娜维娅",
+  "nameEn": "Navia",
+  "author": "local",
+  "tagline": "娜维娅双区背景 · 侧栏珍珠灰白 · 主区橄榄金 · 毛玻璃面板",
+  "description": "基于原神角色娜维娅的dsh-web主题：竖版侧栏浅底深字，横版主区深底白字，无视深浅主题设置。",
+  "tags": [
+    "gold",
+    "Navia",
+    "genshin",
+    "glassmorphism"
+  ],
+  "accent": "#a8842c",
+  "order": 68,
+  "version": "0.2.0",
+  "contributes": {
+    "stylesheet": "skin.css",
+    "patches": "patches.css",
+    "backgroundMedia": {
+      "light": {
+        "type": "image",
+        "src": "assets/main.webp",
+        "scrim": "linear-gradient(rgba(32, 28, 21, 0.15) 0%, rgba(32, 28, 21, 0.2) 60%, rgba(32, 28, 21, 0.25) 100%)"
+      },
+      "dark": {
+        "type": "image",
+        "src": "assets/main.webp",
+        "scrim": "linear-gradient(rgba(10, 8, 6, 0.25) 0%, rgba(12, 10, 8, 0.3) 60%, rgba(14, 11, 8, 0.35) 100%)"
+      }
+    }
+  }
+}

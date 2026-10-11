@@ -1,0 +1,313 @@
+/* ============================================================
+   navia patches (L3): 分区背景 + 毛玻璃 + 文字色压制
+   ⚠️ 不要给选择器加 html[data-dsh-skin] 前缀——管线自动加，
+      显式加会双重前缀导致全部规则失效
+   ============================================================ */
+
+/* ---------- 侧边栏：竖版珍珠灰白底图 + 深色文字 ---------- */
+[data-dsh-frame] [data-pane="sidebar"] {
+  background-color: #e8e2da !important;
+  background-image: url(assets/sidebar.webp) !important;
+  background-size: cover !important;
+  background-position: center top !important;
+}
+
+/* 侧边栏毛玻璃垫：均匀白纱 + 强模糊，文字坐玻璃上、图细节退后 */
+[data-pane="sidebar"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  background: rgba(250, 247, 242, 0.42);
+}
+
+/* 侧边栏全部文字压深色（浅底深字） */
+[data-pane="sidebar"],
+[data-pane="sidebar"] * {
+  color: #2e2a26 !important;
+}
+[data-pane="sidebar"] a {
+  color: #7a5a1a !important;
+}
+[data-pane="sidebar"] a:hover {
+  color: #a8842c !important;
+}
+[data-pane="sidebar"] input,
+[data-pane="sidebar"] textarea {
+  color: #2e2a26 !important;
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+[data-pane="sidebar"] input::placeholder,
+[data-pane="sidebar"] textarea::placeholder {
+  color: rgba(46, 42, 38, 0.55) !important;
+}
+
+/* ---------- 主区：横版金橄榄底（已垫深底）+ 白色文字 ---------- */
+[data-dsh-frame] [data-pane="conversation"] {
+  background-color: #201c15 !important;
+  background-image: url(assets/main.webp) !important;
+  background-size: cover !important;
+  background-position: center !important;
+}
+[data-pane="conversation"],
+[data-pane="conversation"] * {
+  color: #f2e8d5 !important;
+}
+[data-pane="conversation"] a {
+  color: #e8c76a !important;
+}
+[data-pane="conversation"] a:hover {
+  color: #f5d88e !important;
+}
+
+/* ---------- 主区托底：滚动区/消息行半透明（不 blur，图保持清晰） ---------- */
+[data-dsh-part="scrollport"] {
+  background: rgba(24, 20, 14, 0.5) !important;
+}
+[data-dsh-part="message-row"] {
+  background: rgba(24, 20, 14, 0.38) !important;
+}
+[data-dsh-part="message-body"] {
+  background: transparent !important;
+}
+
+/* 输入区玻璃（深色渐变玻璃，小区域 blur 不糊图）
+   注意：composerSeat 类名在 rc.2 已不存在（composer 用 YIbhGa_*），此规则当前无效，留作占位 */
+[data-phase="active"] [class*="composerSeat"] {
+  background: none !important;
+}
+[data-phase="active"] [class*="composerSeat"]:before {
+  content: "";
+  z-index: -1;
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  /* backdrop-filter: blur(12px); */
+  background: linear-gradient(rgba(20, 16, 10, 0) 0%, rgba(20, 16, 10, 0.82) 40px);
+}
+[data-phase="active"] [class*="composerSeat"] textarea,
+[data-phase="active"] [class*="composerSeat"] input {
+  color: #f2e8d5 !important;
+  background: rgba(20, 16, 10, 0.45) !important;
+}
+
+/* 代码块/内联代码：深色玻璃块 */
+[data-pane="conversation"] pre {
+  background: rgba(18, 14, 9, 0.62) !important;
+  color: #ede6d2 !important;
+}
+[data-pane="conversation"] code {
+  background: rgba(18, 14, 9, 0.45) !important;
+  color: #f0d9a8 !important;
+}
+
+/* 对话框/菜单：深色毛玻璃 */
+[role="dialog"],
+.aionui-dialog,
+.aionui-menu,
+.aionui-toast {
+  backdrop-filter: blur(16px) !important;
+  background: rgba(28, 23, 16, 0.88) !important;
+  color: #f2e8d5 !important;
+}
+[role="dialog"] * {
+  color: #f2e8d5 !important;
+}
+[role="dialog"] a {
+  color: #e8c76a !important;
+}
+
+/* 滚动条压色 */
+[data-pane="sidebar"]::-webkit-scrollbar-thumb {
+  background: rgba(46, 42, 38, 0.35) !important;
+}
+[data-pane="conversation"]::-webkit-scrollbar-thumb {
+  background: rgba(242, 232, 213, 0.25) !important;
+}
+
+/* ---------- 侧边栏局部浅色 token：内部组件背景降透明度，图更透更亮 ---------- */
+[data-pane="sidebar"] {
+  --dsw-alias-bg-base: rgba(240, 236, 228, 0.15);
+  --dsw-alias-bg-layer-1: rgba(242, 238, 230, 0.18);
+  --dsw-alias-bg-layer-2: rgba(235, 230, 218, 0.22);
+  --dsw-alias-bg-layer-3: rgba(226, 220, 206, 0.25);
+  --dsw-specific-sidebar-fill: rgba(240, 236, 228, 0.45);
+}
+
+
+/* commit hash 黑底白字 chip（nS98la_buildRevision） */
+[data-pane="sidebar"] [class*="buildRevision"] {
+  background: #2e2a26 !important;
+  color: #f2e8d5 !important;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+
+/* 整个消息流一个毛玻璃面板（不再逐条分裂；区别于设置里的全屏背景模糊滑块） */
+[data-dsh-part="scrollport"] {
+  /* backdrop-filter: blur(12px) !important; */
+  background: rgba(24, 20, 14, 0.45) !important;
+}
+[data-dsh-part="message-row"] {
+  background: transparent !important;
+}
+
+
+/* 修正：毛玻璃面板加在对话框容器（data-dsh-part="dialog"），不是整个 scrollport */
+[data-dsh-part="scrollport"] {
+  backdrop-filter: none !important;
+}
+[data-dsh-part="dialog"] {
+  backdrop-filter: blur(8px) !important;
+  background: rgba(24, 20, 14, 0.45) !important;
+  border-radius: 12px;
+}
+
+/* 消息流整块毛玻璃面板（锚点：flow 容器 pRcS0G_column[data-chat-flow]，不再逐条分裂） */
+[data-chat-flow] {
+  /* backdrop-filter: blur(12px) !important; */
+  background: rgba(24, 20, 14, 0.45) !important;
+  border-radius: 12px;
+}
+
+/* data-chat-flow：滚动区内容器禁用 backdrop-filter（8/29 Firefox 纪律恢复：
+   blur 曾致 WebRender 合成 bug——滚动消息泄漏到 composer 层下；且 backdrop-filter
+   劫持 fixed 后代包含块，2026-09-02 composerStack 同族 bug 实录，风险同类）。
+   保留 padding 玻璃膨胀（视觉微调）；半透明底由上行规则负责 */
+[data-chat-flow] {
+  backdrop-filter: none !important;
+  padding: 4px 10px;
+}
+
+/* Firefox 滚动裁剪失效兜底：composer 栈不透明背景 + 层叠隔离，
+   消息溢出到 composer 区域即被彻底遮挡（不再半透明漂浮可见）。
+   锚点：composerStack（composer 最上级容器）。用 [class*=] 子串匹配、
+   **不写哈希前缀**——前缀随构建轮换：0.1.7-rc.2 实测为 wOuVoW_composerStack，
+   旧注记的 WyiL6q_ 已过期（子串匹配因此不受影响，这正是选它的理由）。 */
+[class*="composerStack"] {
+  position: relative;
+  z-index: 10;
+  isolation: isolate;
+  background: #201c15 !important;
+}
+
+/* composerStack：0.82 高不透明背景 + 圆角（覆盖实色兜底）。
+   ⚠️ backdrop-filter 已移除（2026-09-02 bug 实录）：Firefox 下 backdrop-filter 会把
+   composerStack 变成 fixed 后代的包含块——官方发送按钮 tooltip（position:fixed，
+   JS 按视口坐标写 top:707.9）被重新解释为相对 stack 坐标，撑出 576px 滚动溢出
+   （stack.scrollH 133→709）经 overflow:visible 传播到 scrollBody（scrollH 虚高），
+   导致滚动可越过真实内容、composer 被滚出视口、tooltip 反而钉在视口底部。
+   现场验证：移除 tooltip 后 stack.scrollH 715→139、scrollBody.scrollH 回落 576、seat 回底。
+   纪律：滚动区内容器一律禁止 backdrop-filter（8/29 Firefox 合成 bug 教训的延续） */
+[class*="composerStack"] {
+  background: rgba(24, 20, 14, 0.82) !important;
+  border-radius: 14px;
+}
+
+/* hero 阶段：呼吸带加宽（2026-10-08）。
+   为什么需要：卡是我们（皮肤）画的，而 hero 的 composerStack 里叠了三个兄弟——
+   「标题块 / 芯片行 / 输入卡」，标题排在**第一个**，直接贴在我们卡的上沿，零呼吸；
+   底部却因为输入卡自带内边距而有富余，看起来头重脚轻。
+   为什么限定 composerHero：该类与 composerStack 同在 hero 变体的同一元素上
+   （ConversationContent 里 `clsx(css.composerStack, hero && css.composerHero)`）；
+   dock 阶段不带它，stack 里也只有输入卡，所以这条不会波及正常对话。
+   ── 沿革：2026-09-27 加 padding-top:14px（对齐卡圆角）→ 2026-10-08 抬到 40px 并试
+   「上沿渐隐」（linear-gradient 40px 渐入，手法借 remiel-starlit active 阶段的 ::before
+   渐隐带）→ **试用后被否决、已回退**：本卡有左右边距，只软上沿会成「三边硬、一边软」，
+   且壁纸亮部透进渐变区发灰，比硬边更脏。若日后仍想软化，正确做法是**四边一起 mask**
+   （mask-image 四向渐变），而非只做上沿 —— 这也解释了 remiel-starlit 为何能裸奔：
+   它那张卡**本来就不存在**（hero 阶段零干预，官方 .composerStack 无背景）。→ 定为 32px。
+   ★ 32 不是随手写的：官方 .composerHero 自己在同一个元素上写着 `padding-bottom: 32px`
+   （ConversationRoot.module.css，注释 "Foot inside the centered box floats the stack a
+   bit above true center" —— 它把整摞往下推 32px 做视觉居中微调）。我们在顶部补同样
+   32px，卡内上下留白即对称。上游若改那个值，本条也应同步。
+   ★ 为什么不能直接引用官方值：官方在这块只暴露了 --dsh-composer-stack-gap(6px) /
+   --dsh-composer-side-clearance(16px|8px) / --dsh-composer-dock-inset(8px)，都与
+   「上下呼吸」不同义；gap:8px 与 padding-bottom:32px 是硬编码，拿不到。
+   ★★ 关于「魔数会不会被上游改炸」——要看它覆盖的是什么：
+     · 危险的是覆盖**用户可调项**（如 --dsh-content-font-size），上游一变就静默吞掉
+       用户设置，那是真的炸（2026-10-08 拆掉的就是这种）；
+     · 本条是**皮肤自有装饰**，且选择器锚官方类名（[class*=] 子串匹配，抗构建哈希轮换），
+       上游撤掉 composerStack/composerHero 只会让规则**失配失效**（呼吸回到 0），
+       属于可发现的安全降级，不会炸。
+   ★ 不要顺手加 backdrop-filter：它会把 composerStack 变成 fixed 后代的包含块，官方发送
+   按钮 tooltip（position:fixed，JS 按视口坐标写 top）会被重解释为相对 stack 坐标，
+   撑出数百 px 滚动溢出（2026-09-02 实录：stack.scrollH 133 -> 709）。 */
+[class*="composerStack"][class*="composerHero"] {
+  padding-top: 32px;
+}
+
+/* conversation header：高强度毛玻璃（blur16 + 0.82 + 圆角）。
+   注意：backdrop-filter 会劫持本容器内 fixed 后代的包含块（2026-09-02
+   composerStack bug 同族机制）。header 不在滚动容器内，不会撑出滚动溢出；
+   仅潜在风险为 header 内按钮 tooltip 显示错位——已观察确认无碍，保留毛玻璃。
+   若日后 header 内浮层出现错位，移除本规则的 backdrop-filter 即可。
+   ⚠ 2026-09-26 换锚（0.1.7）：旧锚 data-dsh-responsive-part="conversation-header" 由
+   dsh-web-all 的 shim 运行时打标，0.1.7 下该 shim 已整体失锚（实测该属性取值只剩
+   sidebar-toggle / sidebar-entry / code / composer）→ 改为锚官方 slot + header 标签。 */
+[data-slot="conversation.header"] header,
+header[class*="_header"] {
+  backdrop-filter: blur(16px) !important;
+  background: rgba(24, 20, 14, 0.82) !important;
+  border-radius: 14px;
+}
+
+
+/* 新会话按钮：字色提亮（同 commit hash chip 的 #f2e8d5，暗背景对比度不足看不清） */
+[data-pane="sidebar"] [class*="newSession"] {
+  color: #f2e8d5 !important;
+}
+
+
+/* ---------- 会话正文宽度手柄（resize-handle）：静止可见 + hover 高对比 ----------
+   背景：官方宽度手柄（`.widthHandle`，带 data-side / data-width-handle）静止态完全透明，
+   只在 hover 时画一条 3px 光带，颜色取 --dsw-alias-scrollbar-hover-l1；本皮肤把它重映射成
+   #a8842c55（33% 金），叠在 main.webp 照片底 + 半透明深色面板上几乎看不见 →
+   调宽功能"存在但找不到"（2026-09-19 实测：手柄 40px、cursor:col-resize、拖拽与落盘都正常）。
+   锚点：data-dsh-part="resize-handle"（官方语义 part，即 [data-side]，见 skin-center
+   contracts/semantic-attrs-v1.md「列宽手柄」）；按本文件顶部纪律**不要**再手写 html[data-dsh-skin] 前缀。
+   技法：官方只用了 ::after（跟随指针 Y 的光带），故静止把手用 ::before，互不干扰、同列对齐（均 3px / 16px）。
+   两个旋钮：--navia-handle-rest（静止把手）/ --navia-handle-hot（hover 与拖动中的光带）。 */
+[data-dsh-part="resize-handle"] {
+  --navia-handle-rest: rgba(232, 199, 106, 0.30);
+  --navia-handle-hot: rgba(245, 216, 142, 0.92);
+}
+[data-dsh-part="resize-handle"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 96px;
+  margin-top: -48px;
+  border-radius: 3px;
+  background: var(--navia-handle-rest);
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+[data-dsh-part="resize-handle"][data-side="left"]::before {
+  right: 16px;
+}
+[data-dsh-part="resize-handle"][data-side="right"]::before {
+  left: 16px;
+}
+/* hover 时把手让位给官方光带（避免两条线并存） */
+[data-dsh-part="resize-handle"]:hover::before,
+[data-dsh-part="resize-handle"][data-dragging]::before {
+  opacity: 0;
+}
+/* 官方 hover 光带（整列高、跟随指针 Y 的渐变）在本皮肤底色上太淡：换高对比金。
+   --dsh-width-handle-pointer-y 由官方 JS 在 pointermove 时发布，必须保留该变量，
+   否则光带会钉死在 50% 高度。 */
+[data-dsh-part="resize-handle"]:hover::after,
+[data-dsh-part="resize-handle"][data-dragging]::after {
+  background: linear-gradient(
+    to bottom,
+    transparent calc(var(--dsh-width-handle-pointer-y, 50%) - 52px),
+    var(--navia-handle-hot) calc(var(--dsh-width-handle-pointer-y, 50%) - 12px),
+    var(--navia-handle-hot) calc(var(--dsh-width-handle-pointer-y, 50%) + 12px),
+    transparent calc(var(--dsh-width-handle-pointer-y, 50%) + 52px)
+  );
+}

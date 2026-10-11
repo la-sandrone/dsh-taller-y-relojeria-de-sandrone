@@ -1,0 +1,25 @@
+# 凭据与运行时数据 —— 绝不入库
+启动器配置和日志/密钥.env
+启动器配置和日志/当前配置.toml
+启动器配置和日志/运行记录/
+*.env
+*.cnf
+
+# 依赖与产物
+node_modules/
+__pycache__/
+*.pyc
+.pnpm-store/
+
+# 备份与临时
+*.bak-*
+*.tmp
+.DS_Store
+
+# 零位图纪律（本仓不含任何位图；见 NOTICE.md）
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.avif

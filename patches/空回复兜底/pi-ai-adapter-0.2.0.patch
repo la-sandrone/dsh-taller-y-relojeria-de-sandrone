@@ -1,0 +1,72 @@
+diff --git a/packages/llm/llm-pi-ai/src/stream.ts b/packages/llm/llm-pi-ai/src/stream.ts
+index 30e9c79..9400660 100644
+--- a/packages/llm/llm-pi-ai/src/stream.ts
++++ b/packages/llm/llm-pi-ai/src/stream.ts
+@@ -73,9 +73,9 @@ function classifyPiAiError(message: string): string {
+  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
+  * @returns the mapped harness reason. Recognized error text, `stop` usage above
+  *   `contextWindow`, and zero-output `length` usage that fills the window map
+- *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` with no content blocks maps to an
+- *   `EMPTY_RESPONSE` error, while terminal `pending` and `deferred` states map
+- *   to non-retryable `PI_AI_ERROR` failures.
++ *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` that delivered neither non-blank text
++ *   nor a tool call maps to an `EMPTY_RESPONSE` error, while terminal `pending`
++ *   and `deferred` states map to non-retryable `PI_AI_ERROR` failures.
+  */
+ export function mapStopReason(message: AssistantMessage, contextWindow?: number): FinishReason {
+   const piAiOverflow = isContextOverflow(message, contextWindow)
+@@ -94,13 +94,15 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
+ 
+   switch (message.stopReason) {
+     case 'stop':
+-      // A terminal stop that produced no content blocks is a degenerate
+-      // provider completion, not a successful (empty) assistant message.
+-      if (message.content.length === 0) {
++      // A terminal stop that delivered nothing actionable is a degenerate provider
++      // completion, not a successful (empty) assistant message. A thinking block is
++      // not an answer; a tool call is live work rather than an empty turn.
++      if (!message.content.some(block => block.type === 'toolCall'
++        || (block.type === 'text' && block.text.trim().length > 0))) {
+         return {
+           kind: 'error',
+           failure: {
+-            message: `model "${message.model}" returned a completed response with no content`,
++            message: `model "${message.model}" returned a completed response with no answer content`,
+             code: EMPTY_RESPONSE_CODE,
+           },
+         }
+diff --git a/packages/llm/llm-pi-ai/tests/convert.spec.ts b/packages/llm/llm-pi-ai/tests/convert.spec.ts
+index 005c125..a04996c 100644
+--- a/packages/llm/llm-pi-ai/tests/convert.spec.ts
++++ b/packages/llm/llm-pi-ai/tests/convert.spec.ts
+@@ -881,14 +881,27 @@ describe('mapStopReason / mapUsage', () => {
+     expect(mapStopReason(assistant({ stopReason: 'stop' }))).toEqual({
+       kind: 'error',
+       failure: {
+-        message: 'model "deepseek-v4-flash" returned a completed response with no content',
++        message: 'model "deepseek-v4-flash" returned a completed response with no answer content',
+         code: EMPTY_RESPONSE_CODE,
+       },
+     })
+   })
+ 
+-  it('keeps a thinking-only stop successful (any block counts as content)', () => {
+-    expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'thinking', thinking: 'mull' }] })))
++  it('counts only deliverable content, so a thinking-only stop is an EMPTY_RESPONSE error', () => {
++    const empty = {
++      kind: 'error',
++      failure: {
++        message: 'model "deepseek-v4-flash" returned a completed response with no answer content',
++        code: EMPTY_RESPONSE_CODE,
++      },
++    }
++    // A reasoning block is not an answer, and blank text is not an answer either.
++    expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'thinking', thinking: 'mull' }] }))).toEqual(empty)
++    expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'text', text: ' \n ' }] }))).toEqual(empty)
++    // A tool call is live work, and non-blank text is an answer: both stay a normal stop.
++    expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'toolCall', id: 'call_1', name: 'read', arguments: {} }] })))
++      .toEqual({ kind: 'stop' })
++    expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'thinking', thinking: 'mull' }, { type: 'text', text: 'done' }] })))
+       .toEqual({ kind: 'stop' })
+   })
+ 

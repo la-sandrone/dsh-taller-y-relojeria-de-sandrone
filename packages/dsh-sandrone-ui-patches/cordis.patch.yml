@@ -1,0 +1,5 @@
+# dsh-sandrone-ui-patches bundle patch: inserts its dshClient row into the web plugin roster.
+# Font CSS is injected by the client half; the host half is a no-op.
+- insert:
+    - id: dsh-sandrone-ui-patches
+      name: dsh-sandrone-ui-patches

@@ -1,0 +1,43 @@
+/* navia skin.css (L1): 金色强调 + 玻璃底色 token
+   无视深浅主题：:root 与 body[data-ds-dark-theme] 写同一套值 */
+
+:root,
+body[data-ds-dark-theme] {
+  /* 金色强调 */
+  --dsw-alias-brand-primary: #a8842c;
+  --dsw-alias-brand-text: #f5ead2;
+  --dsw-alias-state-business-primary: #a8842c;
+  --dsw-alias-state-business-tertiary: #8b7231;
+  --dsw-alias-button-primary-fill: #a8842c;
+  --dsw-alias-button-primary-hover: #c9a227;
+  --dsw-alias-button-primary-dimmed: #a8842c40;
+  --dsw-alias-interactive-bg-hover-accent: #a8842c26;
+  --dsw-alias-scrollbar-hover-l1: #a8842c55;
+
+  /* 玻璃底色：深橄榄半透明，透出主区背景图；侧边栏局部浅化在 patches.css
+     透明度随 --dsw-skin-scrim（背景遮挡滑块）加深 */
+  --dsw-alias-bg-base: rgba(20, 17, 12, calc(var(--dsw-skin-scrim, 0) * .4));
+  --dsw-alias-bg-layer-1: rgba(28, 23, 16, calc(.38 + var(--dsw-skin-scrim, 0) * .42));
+  --dsw-alias-bg-layer-2: rgba(36, 30, 20, calc(.42 + var(--dsw-skin-scrim, 0) * .4));
+  --dsw-alias-bg-layer-3: rgba(44, 37, 25, calc(.46 + var(--dsw-skin-scrim, 0) * .38));
+  --dsw-alias-bg-mask-1: rgba(20, 17, 12, calc(.2 + var(--dsw-skin-scrim, 0) * .3));
+  --dsw-alias-bg-mask-2: rgba(20, 17, 12, calc(.3 + var(--dsw-skin-scrim, 0) * .3));
+  --dsw-alias-bg-mask-3: rgba(20, 17, 12, calc(.4 + var(--dsw-skin-scrim, 0) * .3));
+  --dsw-alias-bg-overlay: rgba(14, 11, 8, .72);
+  --dsw-alias-bg-mask-photo: transparent;
+
+  /* 侧边栏底色：浅色玻璃（深字，透出竖版珍珠白图） */
+  --dsw-specific-sidebar-fill: rgba(240, 236, 228, .45);
+
+  /* 代码块/内联代码：深色玻璃 */
+  --dsw-alias-markdown-code-block: rgba(18, 14, 9, .62);
+  --dsw-alias-markdown-inline-code: rgba(18, 14, 9, .45);
+}
+
+/* 金色按钮前景色配对（消除 label-primary-foreground 警告）：
+   金色底配深色文字，对比优于白字 */
+:root,
+body[data-ds-dark-theme] {
+  --dsw-alias-label-primary-foreground: #2e2a26;
+  --dsw-alias-brand-primary-invert: #2e2a26;
+}

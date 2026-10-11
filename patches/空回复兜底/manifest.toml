@@ -1,0 +1,126 @@
+# 补丁清单 —— 空回复兜底（EMPTY_RESPONSE 判据按「可交付内容」判定）
+#
+# 这份文件是**开机护栏 guard_ui_patches 的唯一输入**：`tools/dsh-ui-patches.py` 按
+# `补丁/*/manifest.toml` 逐个处理 —— 本目录与 `Markdown渲染/` 同属一份 patch 存档，
+# 只是分两个目录各带一份清单（**一个目录一份 manifest**，护栏按目录扫）。
+#
+# ── 为什么要有它（根因）──────────────────────────────────────────────
+#
+# 这个补丁改的是【基座检出的源码】⇒ **升级 = 新检出 = 补丁消失**。所以本体与存档都放在
+# 版本无关的 `补丁/`，重放交给开机护栏 —— 与 `Markdown渲染/` 同一条路子。
+#
+# 修的是一条**判据**，两个适配器各犯了一次同样的错：空响应守卫问的是
+# 「**有没有块 / 块数组是不是空**」，而 reasoning（thinking）块也是块
+# ⇒「只吐思考链、finish=stop」的退化响应**永远满足守卫的反面情形**，被当成正常完成落盘：
+#     不抛错 → 不重试（`EMPTY_RESPONSE` 本来是默认可重试码的第一位）→
+#     客户端老老实实渲染成一条**只有思考、没有正文**的空白回复。
+#
+# 两个适配器：
+#   · DeepSeek Messages —— `blocks.size === 0`（Map 里开过的块；thinking 也入表）
+#   · pi-ai（OpenAI 兼容路由）—— `message.content.length === 0`（**数组非空即算有内容**）
+#     ⚠️ 这一处更隐蔽：它有一条**把错误行为写成契约的测试**
+#        （'keeps a thinking-only stop successful (any block counts as content)'）——
+#        所以修补必须**连带反转那条测试的意图**，否则绿是假的。
+#
+# 客户端侧其实早就有正确判据（`packages/client/ui-chat/src/client/contract/
+# assistant-content.ts` 的 `hasAssistantReplyContent`）——但它的语义是「有没有给读者的回复」
+# （**排除** tool-call），而这里要问的是「**有没有交付任何东西**」（tool-call 算交付）。
+# 两者在 tool-call 上恰好相反，**不能直接复用**，这也是本改动值得单独补丁的原因。
+
+[patch]
+name = "空回复兜底（EMPTY_RESPONSE 判据按可交付内容判定）"
+slug = "空回复兜底"
+doc = "dsh-empty-response-content.md"
+# 护栏报错（漂移）时会把这句话打出来，让人当场知道代价是什么
+why = "长上下文下模型偶发只吐思考链、不吐正文（finish 仍是 stop）；两个适配器的守卫都按「块数」而不是「可交付内容」判定 ⇒ 该重试的轮次静默落盘，用户看到空白回复且系统认为这一轮成功"
+
+# ── 目标：要打补丁的文件 + 重放件 ────────────────────────────────────
+#
+# `applied_marker` 是**幂等判据**：文件里已经有它 ⇒ 认为补丁在 ⇒ 不重复打。
+# 刻意用**改完后的报错文案**（字面量），不用行号、也不用上下文 —— 行号会漂。
+#
+# 一个 target = 一份 patch = `git apply` 一次（**原子**：任一 hunk 失败则整份不打）。
+# 拆成两份而不合成一份，是为了让两个适配器**互不牵连**：pi-ai 那份漂移时，
+# Messages 那份照样能打上（护栏按 target 顺序逐份处理，前一份成功即已落盘）。
+# 顺序有意把主修（Messages）排在前面。
+[[target]]
+file = "packages/llm/llm-deepseek/src/translate.ts"
+patch = "messages-adapter-0.2.0.patch"
+applied_marker = "DeepSeek Messages returned no answer content"
+
+[[target]]
+file = "packages/llm/llm-pi-ai/src/stream.ts"
+patch = "pi-ai-adapter-0.2.0.patch"
+applied_marker = "returned a completed response with no answer content"
+
+# ── 升级核对：上游漂移就 fail-loud ──────────────────────────────────
+#
+# ⚠️ 这些断言**每次开机都跑，而且跑在「该不该打补丁」之前** ⇒ 它们必须
+#    **在补丁已打上的状态下也全部成立**。否则一件状态良好的树会被报成「上游漂移」，
+#    补丁反而永远打不回去（这是本清单最容易被写错的地方）。
+#    故只断言**补丁不改变**的上游结构：分支前提、reason 判据、错误码、块类型、测试锚点。
+#
+# ⚠️ 这些断言是**整份清单共用**的：任一项不成立 ⇒ 两个 target 都不打（fail-closed）。
+#    这是刻意的：宁可这次不打，也不要打出一份行为错误的补丁。
+#
+# ⚠️ TOML 的 inline table `{...}` **不许跨行**（数组可以跨行）——
+#    `Markdown渲染/manifest.toml` 里已注明过这个坑，这里同样每条保持单行。
+must_contain = [
+  { file = "packages/llm/llm-deepseek/src/translate.ts", text = "message_stop without settled blocks and stop reason" },
+  { file = "packages/llm/llm-deepseek/src/translate.ts", text = "reason.kind === 'stop'" },
+  { file = "packages/llm/llm-deepseek/src/translate.ts", text = "'EMPTY_RESPONSE'" },
+  { file = "packages/llm/llm-deepseek/src/translate.ts", text = "case 'thinking':" },
+  { file = "packages/llm/llm-deepseek/tests/stream.spec.ts", text = "refuses unsupported response content, empty responses and premature EOF" },
+  { file = "packages/llm/llm-pi-ai/src/stream.ts", text = "export function mapStopReason(" },
+  { file = "packages/llm/llm-pi-ai/src/stream.ts", text = "case 'stop':" },
+  { file = "packages/llm/llm-pi-ai/src/stream.ts", text = "EMPTY_RESPONSE_CODE" },
+  { file = "packages/llm/llm-pi-ai/tests/convert.spec.ts", text = "classifies a completed stop with no content as an EMPTY_RESPONSE error" },
+  { file = "packages/llm/llm-pi-ai/tests/convert.spec.ts", text = "describe('mapStopReason / mapUsage'" },
+]
+must_match = [
+  { file = "packages/llm/llm-deepseek/src/translate.ts", regex = "blocks\\.values\\(\\)" },
+  { file = "packages/llm/llm-pi-ai/src/stream.ts", regex = "message\\.content" },
+]
+
+# ── 构建：只有两条命令，**故意不走 `pnpm run build:lib:host`** ──────────
+#
+# 那句末尾嵌套着 `pnpm --filter @deepseek-ai/dsh-desktop run bundle`，2026-09-26 实测
+# 它命中另一个 pnpm（11.7.0）导致**整条 build:lib 中断**，client 半区只留下 `types/`
+# 没有 `index.js`，之后 build:web 才以 Rollup 报错暴露出来（见
+# `用户笔记/升级/0.1.7/DSH升级-0.1.7-阶段2-自跑指引.md`）。本补丁只需要 host 半区里的
+# **两个包**，所以直接点名命令，把风险面缩到最小 —— 也顺带避开无关的 desktop bundle。
+#
+# ⚠️ `--filter` 只吃**精确相等**（包名或 cwd 全文），**不吃正则**：实测
+#    `--filter dsh-llm-deepseek` 与 `--filter "/llm-deepseek$/"` 都得到
+#    `Error: No valid configuration found.`（rc=1，硬失败，**不会静默空跑**——这点是好事）。
+#    必须写全名；**重复传 `--filter` 有效**（实测两个包都在同一次运行里构建完成）。
+#
+# ⚠️ 运行时装的是 `lib/`（`package.json` 的 `main`/`exports` 都指 lib），**不是 `src/`**：
+#    只改 src 不重建 = 看着改了、其实没生效。这就是本清单必须有 [build] 的原因。
+#
+# ⚠️ `artifact` 只能写一个：两个包由**同一次**运行一起重建，所以拿主修包的产物当哨兵即可
+#    （真正保底的是「刚打过补丁」这条，它会直接强制重建，不走 mtime 启发式）。
+[build]
+artifact = "packages/llm/llm-deepseek/lib/index.js"
+run = [
+  "pnpm exec tsc -b tsconfig.host.json",
+  "pnpm exec tsdown --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-llm-deepseek --filter @deepseek-ai/dsh-llm-pi-ai",
+]
+
+# ── 上游漂移时的处置提示（护栏报错会打出来）──────────────────────────
+[on_drift]
+hint = """
+上游改了上面那几项之一 ⇒ **不要盲目重打**（补丁是上下文差分，打不进去会硬失败）：
+  1. 先确认两个适配器的分支还在：
+     `llm-deepseek/src/translate.ts` 的 `message_stop` 分支、
+     `llm-pi-ai/src/stream.ts` 的 `case 'stop':`；
+  2. **若上游已自行修好**（守卫改成按可交付内容判定；pi-ai 那边的
+     'keeps a thinking-only stop successful' 测试被反转），本补丁**应当删除**：
+     删掉 `补丁/空回复兜底/` 整个目录即可，护栏下次开机不再处理它。
+     删之前先各跑一次包测试，用「只有思考链的 stop 会不会抛 EMPTY_RESPONSE」确认；
+  3. 若只是周边漂移：在当前版本源码里重新定位，改好后用
+     `git -C 原始代码研究/<版本> diff -- <该适配器的 src 与 tests> > 新件.patch`
+     生成新件，并把新文件名写回对应 [[target]].patch（旧件留着或删掉都行）；
+  4. 重打后**回读四件事**：两个 `lib/index.js` 里都能 grep 到 `no answer content`、
+     两个包的测试全过、影响半径只有那两个产物、真机重启跑一轮。
+"""

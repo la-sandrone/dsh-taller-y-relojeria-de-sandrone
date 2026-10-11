@@ -1,0 +1,83 @@
+diff --git a/packages/client/ui-chat/src/client/chat/MessageItem.tsx b/packages/client/ui-chat/src/client/chat/MessageItem.tsx
+index f4e0fff..fce845b 100644
+--- a/packages/client/ui-chat/src/client/chat/MessageItem.tsx
++++ b/packages/client/ui-chat/src/client/chat/MessageItem.tsx
+@@ -1,10 +1,25 @@
+-import { Fragment, memo, useEffect, useMemo, useState } from 'react'
++/**
++ * dsh-user-markdown 补丁（本地私有，非上游代码）。
++ *
++ * 让用户消息气泡（user / steering，含 PendingSteeringBubble 与本地回声）按 Markdown
++ * 渲染。官方 2026-07-23 决策把"用户输入是否格式化"定义为产品选择、默认按字面渲染，
++ * 本补丁即本地做出的那次选择。
++ *
++ * 改动仅一处：UserStyleBubble 的内容行由 projectUserText 换为 projectUserContent。
++ * 不触碰 actions（复制 / 分支 / 插件 extraActions）、附件行、queue 排队预览。
++ *
++ * 升级基座后 lib/ 被重建覆盖，补丁丢失；重打步骤与边界见
++ * dsh-domus/patches/dsh-user-markdown.md。
++ */
++import { Fragment, isValidElement, memo, useEffect, useMemo, useState } from 'react'
+ import type { ReactNode } from 'react'
+ import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+ import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
+-import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
++import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, MarkdownText, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
++import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+ import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
+ import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
++import { markdownLabels } from '../markdown-labels.ts'
+ import { CompactionItem } from './CompactionItem.tsx'
+ import { ContextInjectionRow } from './ContextInjectionRow.tsx'
+ import { MessageIconActions } from './MessageIconActions.tsx'
+@@ -153,6 +168,32 @@ function TurnMaxTokensItem({ t }: {
+   )
+ }
+ 
++/**
++ * dsh-user-markdown 补丁 —— 用户气泡文本的 Markdown 渲染。
++ *
++ * 无引用装饰（@文件 / 会话引用 / 已加载技能名）时按 Markdown 渲染；含引用 token
++ * 时整条退回官方 chip 投影：引用扫描是纯文本层的、不理解 Markdown 结构，强行走
++ * Markdown 会把代码块与表格里的 @、/ 误抠成 chip 导致语法腰斩。判定复用官方
++ * projectUserText 的返回值结构（无装饰 ⟺ 单个 span 且 children 就是原文），
++ * 不复制官方正则；官方改实现时安全退回纯文本。
++ * @param text - 消息的模型可见文本。
++ * @param referenceLabels - 相邻 recall 关联的会话引用标签。
++ * @param skillNames - 该消息已加载的技能名。
++ * @param labels - Markdown 围栏与脚注的本地化文案。
++ * @returns 引用 chip 投影，或整段的 Markdown 渲染。
++ */
++function projectUserContent(
++  text: string,
++  referenceLabels: readonly string[],
++  skillNames: readonly string[],
++  labels: MarkdownLabels,
++): ReactNode {
++  const projected = projectUserText(text, referenceLabels, skillNames)
++  const undecorated = isValidElement(projected)
++    && (projected.props as { children?: unknown }).children === text
++  return undecorated ? <MarkdownText text={text} labels={labels} /> : projected
++}
++
+ /** Right-aligned bubble shared by user and steering rows. */
+ function UserStyleBubble({
+   content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [],
+@@ -176,6 +217,8 @@ function UserStyleBubble({
+ }): ReactNode {
+   const { text, attachments: contentAttachments, rest } = contentParts(content)
+   const attachments = previewAttachments ?? contentAttachments
++  // dsh-user-markdown 补丁：locale 切换才重建（新建对象会重建 MarkdownText 的组件表）。
++  const mdLabels = useMemo(() => markdownLabels(t), [t])
+   const compactImages = attachments.length > 1
+   const truncated = (total: number): string => t('json.truncated', { total })
+   const showBubble = text !== '' || rest.length > 0
+@@ -213,7 +256,7 @@ function UserStyleBubble({
+           </div>
+         )}
+         {showBubble && <div className={css.bubble}>
+-          {projectUserText(text, referenceLabels, skillNames)}
++          {projectUserContent(text, referenceLabels, skillNames, mdLabels)}
+           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
+         </div>}
+         {referenceLabels.length > 0 && (

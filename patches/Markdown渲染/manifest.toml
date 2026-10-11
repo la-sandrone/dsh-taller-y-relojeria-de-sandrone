@@ -1,0 +1,82 @@
+# 补丁清单 —— 用户消息 Markdown 渲染（dsh-user-markdown）
+#
+# 这份文件是**开机护栏 guard_ui_patches 的唯一输入**：它把原来写在文档里、
+# 靠人每次升级手动执行的「4 项结构核对 + 重打 + 重建」变成数据 + 断言。
+#
+# ── 为什么要有它（根因，2026-10-08 查实）────────────────────────────
+#
+# 这个补丁改的是【基座检出的源码】⇒ **升级 = 新检出 = 补丁消失**；
+# 存档原先放在 per-version 的 home 里、而且两个 home 各一份（所谓"唯一存档"是假的）。
+# 于是每次升级都得靠人照文档重做一遍 —— 用户话：「每次升级一次又要到了打 markdown
+# 和其他 ui 补丁的时间」，而他**大量依赖 markdown 语法输入**。
+#
+# 所以：本体与存档都搬到**版本无关**的 `补丁/`，重放交给开机护栏。
+
+[patch]
+name = "用户消息 Markdown 渲染"
+slug = "Markdown渲染"
+doc = "dsh-user-markdown.md"
+# 为什么要这个补丁（护栏报错时会把这句话打出来，让人知道代价是什么）
+why = "用户大量依赖 markdown 语法输入；官方默认按字面渲染（2026-07-23 的 ADR 把「用户输入是否格式化」定义为产品选择）"
+
+# ── 目标：要打补丁的文件 + 重放件 ──────────────────────────────────
+#
+# `applied_marker` 是**幂等判据**：文件里已经有它 ⇒ 认为补丁在 ⇒ 不重复打。
+# 刻意用函数名而不是行号/上下文 —— 行号会漂。
+
+[[target]]
+file = "packages/client/ui-chat/src/client/chat/MessageItem.tsx"
+patch = "MessageItem-0.2.0.patch"
+applied_marker = "function projectUserContent("
+
+# ── 升级核对：上游漂移就 fail-loud ────────────────────────────────
+#
+# 这四项**来自补丁文档里原有的手工核对清单**（`dsh-user-markdown.md` 的
+#「版本升级立即排查清单」第 2 步）。核对不通过 = 上游把这些结构改了
+# ⇒ 补丁**不能**盲目重打（会打出错误行为，或者把 chip 点击弄哑）。
+#
+# 判据是「结构还在不在」，不是「行号对不对」—— 后者每次上游改动都会假报警。
+
+[verify]
+# ⚠️ TOML 的 inline table `{...}` **不许跨行**（数组可以跨行，它不行）——
+#    2026-10-08 写这份清单时踩到，护栏当场把「清单读不了」报成了「没有补丁」。
+#    下面每条都保持单行。
+# 1. 补丁的目标函数还在
+# 2. 内容行仍走官方投影函数（补丁包的正是它）
+must_contain = [
+  { file = "packages/client/ui-chat/src/client/chat/MessageItem.tsx", text = "function UserStyleBubble(" },
+  { file = "packages/client/ui-chat/src/client/chat/MessageItem.tsx", text = "projectUserText(text, referenceLabels, skillNames" },
+]
+# 3. projectUserText 的「无装饰」分支仍返回单个 span
+#    —— 判定逻辑的全部依据：单元素且 children 即原文
+must_match = [
+  { file = "packages/client/ui-primitives/src/user-text.tsx", regex = "if \\(parts\\.length === 0\\) return <span className=\\{css\\.plainRun\\}>\\{text\\}</span>" },
+]
+# 4. 三个符号仍从各自的模块导出
+must_export = [
+  { file = "packages/client/ui-primitives/src/index.ts", name = "MarkdownText" },
+  { file = "packages/client/ui-primitives/src/index.ts", name = "projectUserText" },
+  { file = "packages/client/ui-chat/src/client/markdown-labels.ts", name = "markdownLabels" },
+]
+
+# ── 构建：源码变了才重建 ──────────────────────────────────────────
+#
+# ui-chat 是**动态 client 插件、不进 vite graph** ⇒ 只需 tsc + 重打包这一个包，
+# 不需要 `pnpm build:web`（那会把整个 web 重编，几分钟）。
+
+[build]
+artifact = "packages/client/ui-chat/lib/client.js"
+run = [
+  "pnpm exec tsc -b tsconfig.client.json",
+  "pnpm --filter @deepseek-ai/dsh-client-ui-chat run bundle",
+]
+
+# ── 上游漂移时的处置提示（护栏报错会打出来）──────────────────────
+[on_drift]
+hint = """
+上游改了上面那 4 项之一 ⇒ 补丁要**人工重写**，不能自动重打：
+  1. 对照 `dsh-user-markdown.md` 的判定逻辑与边界，在当前版本源码里重新定位那 4 处
+  2. 改完用 `git -C 原始代码研究/<版本> diff -- <目标文件>` 生成新的 .patch，替换本目录里的旧件
+  3. 更新本 manifest 的 verify 断言与 target.patch 文件名（版本号进文件名）
+  4. 重建（`dsh-ui-patches.py --apply` 会做）并到浏览器实测一次
+"""

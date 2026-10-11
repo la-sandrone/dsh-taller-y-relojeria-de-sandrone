@@ -1,0 +1,46 @@
+diff --git a/packages/llm/llm-deepseek/src/translate.ts b/packages/llm/llm-deepseek/src/translate.ts
+index deb9011..4290e40 100644
+--- a/packages/llm/llm-deepseek/src/translate.ts
++++ b/packages/llm/llm-deepseek/src/translate.ts
+@@ -146,7 +146,12 @@ export async function* translate(events: AsyncIterable<Record<string, unknown>>,
+       if (event.usage !== undefined) updateUsage(usage, event.usage)
+     } else {
+       if (reason === undefined || [...blocks.values()].some(block => !block.closed)) return malformed('message_stop without settled blocks and stop reason')
+-      if (blocks.size === 0 && reason.kind === 'stop') throw new LlmError('DeepSeek Messages returned no content', 'EMPTY_RESPONSE')
++      // A reasoning block alone is not an answer, so emptiness is judged by what the turn
++      // actually delivered: both block kinds are counted, because a turn that only called a
++      // tool is live work, not an empty completion.
++      const delivered = [...blocks.values()].some(block => block.content.type === 'tool-call'
++        || (block.content.type === 'text' && block.content.text.trim().length > 0))
++      if (reason.kind === 'stop' && !delivered) throw new LlmError('DeepSeek Messages returned no answer content', 'EMPTY_RESPONSE')
+       // Truncated tool JSON is retained in the stream, then pruned by the shared assembler.
+       if (reason.kind !== 'max-tokens') {
+         for (const { content } of blocks.values()) {
+diff --git a/packages/llm/llm-deepseek/tests/stream.spec.ts b/packages/llm/llm-deepseek/tests/stream.spec.ts
+index aa86d48..82bc360 100644
+--- a/packages/llm/llm-deepseek/tests/stream.spec.ts
++++ b/packages/llm/llm-deepseek/tests/stream.spec.ts
+@@ -90,6 +90,23 @@ describe('Messages stream', () => {
+     await expect(chunks(translate(events([start, ...end()]), MODEL))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
+     await expect(chunks(translate(events(textEvents.slice(0, -1)), MODEL))).rejects.toMatchObject({ code: 'STREAM_CLOSED' })
+   })
++
++  it('counts only deliverable content as an answer, so a reasoning-only turn is empty', async () => {
++    const thinkingOnly = [start,
++      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: 'plan: answer later' } },
++      { type: 'content_block_stop', index: 0 }, ...end('end_turn')]
++    await expect(chunks(translate(events(thinkingOnly), MODEL))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
++
++    const blankText = [start,
++      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: ' \n ' } },
++      { type: 'content_block_stop', index: 0 }, ...end('end_turn')]
++    await expect(chunks(translate(events(blankText), MODEL))).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' })
++
++    const toolOnly = [start,
++      { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_1', name: 'read', input: {} } },
++      { type: 'content_block_stop', index: 0 }, ...end('tool_use')]
++    expect((await chunks(translate(events(toolOnly), MODEL))).at(-1)).toMatchObject({ reason: { kind: 'tool-calls' } })
++  })
+ })
+ 
+ describe('SSE framing and provider failures', () => {
