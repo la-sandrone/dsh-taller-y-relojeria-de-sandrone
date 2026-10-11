@@ -64,7 +64,7 @@
 
 ## 授权与素材
 
-- 本仓代码：**MIT**（见 [`LICENSE`](LICENSE)）。
+- 本仓代码：**MIT**（见 [`LICENSE`](LICENSE)）。文本内容：[`CC BY-SA 4.0`](https://creativecommons.org/licenses/by-sa/4.0/deed.zh-hans)
 - 第三方素材（随包字体 SIL OFL 1.1、KaTeX MIT、上游 DSH MIT）：逐项见 [`NOTICE.md`](NOTICE.md)。
 - **本仓不含任何插画／摄影素材**，也**不含任何凭据**。所有笔记在发布前经过确定性脱敏（机器路径与用户名已替换），并没有「顺手」保留原文。
 
