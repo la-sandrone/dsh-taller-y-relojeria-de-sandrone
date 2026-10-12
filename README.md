@@ -2,7 +2,7 @@
 
 ## `dsh-taller-y-relojeria-de-sandrone` —— 桑多涅的工坊与钟表铺
 
-对 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）的**本地爆改合集**：源码补丁、界面补丁包、皮肤、字体方案、启动器，以及把这些东西改出来时踩过的坑和判据。
+对 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）的**本地爆改合集**：源码补丁、界面补丁包、皮肤、字体方案、启动器、**System Prompt 设计**，以及把这些东西改出来时踩过的坑和判据。
 
 
 > 标题是Letanías lauretanas里六个真称号的串联，你去核对原剧情我反正觉得差不多对（草生）
@@ -28,17 +28,19 @@
 | **`notes/`** | 脱敏后的实操笔记：排版、皮肤、升级、部署、issue、提示词、检索 | 读**为什么**；配方数值会随版本过期，判据不会 |
 | **`tools/`** | 实用工具：补丁护栏、home 硬链接修复、补丁分层检查、H1 强制，以及**皮肤取色探测** [`skin-color-probe.py`](tools/skin-color-probe.py)（拿一张主题图直接出「该配浅底还是深底」的判决 + 白/黑字对比度） | 直接跑（多为 `--help` 自明） |
 | **`start-web.py`** | DSH 启动器：起 / 停 / 查 / 试新版本 / 回收运行记录，实现全在这一个文件 | 先看 [`启动器配置和日志/README.md`](启动器配置和日志/README.md) |
-| **`docs/`** | [长会话渲染实测报告](docs/perf-long-session-rendering.md)（含一条方法学教训：`--headless` 不能用来测 layout） | 读结论；复现材料在 `bench/` |
+| **`prompts/`** | 五个使用场景的 **System Prompt 设计**（从 DSH **活配置**提取，不是历史快照）+ 该目录的 CC BY-SA 许可全文 | 先读 [`prompts/README.md`](prompts/README.md)：架构、五条设计取向、对话索引机制 |
+| **`docs/`** | [长会话渲染实测报告](docs/perf-long-session-rendering.md)（含一条方法学教训：`--headless` 不能用来测 layout）；[System Prompt 相关研究与实践](docs/RESEARCH.md)（110 条参考文献，含逐条证据分级与检索缺口声明） | 读结论；复现材料在 `bench/` |
 | **`bench/`** | 渲染基准的复现材料（含 KaTeX 字体） | 见报告 |
 
 ---
 
-## 两个源码补丁
+## 三个源码补丁
 
 | 补丁 | 一句话 | 文档 |
 |---|---|---|
 | **Markdown 渲染** | 让**用户消息**按 Markdown 渲染（这是上游的产品选择，本地选了另一条） | [`patches/Markdown渲染/`](patches/Markdown渲染/) |
 | **空回复兜底** | 让「只吐思考链、`finish=stop`」的退化响应变成**可重试的 `EMPTY_RESPONSE`**，而不是一条静默落盘、界面上什么都不显示的空白回复 | [`patches/空回复兜底/dsh-empty-response-content.md`](patches/空回复兜底/dsh-empty-response-content.md) |
+| **沙盒 scratch 落点** | 让 `workspace-write` 沙盒拥有一个**跨调用存活**的临时目录 —— bwrap 在 `--tmpfs /tmp` 之后把宿主的一个子目录 bind 回去（其余 `/tmp` 保持每次全新）；顺带解决「沙盒里 `mkdir /tmp/x` 下次调用就没了」 | [`patches/sandbox-scratch/`](patches/sandbox-scratch/) |
 
 后者的排查过程值得单看：一场真实会话 153 轮里 **13 轮**收尾只产出 reasoning 块、正文一个 token 都没生成，而**两层空响应守卫都在问错的问题**（数的是「有没有开过块」而不是「有没有可交付内容」）——其中一处还有一条**把错误行为写成契约的测试**（`keeps a thinking-only stop successful`）。文档里有完整的取证链。
 
@@ -64,7 +66,8 @@
 
 ## 授权与素材
 
-- 本仓代码：**MIT**（见 [`LICENSE`](LICENSE)）。文本内容：[`CC BY-SA 4.0`](https://creativecommons.org/licenses/by-sa/4.0/deed.zh-hans)
+- 本仓代码：**MIT**（见 [`LICENSE`](LICENSE)）。
+- 文本内容（`notes/`、`prompts/`、`docs/`）：[`CC BY-SA 4.0`](https://creativecommons.org/licenses/by-sa/4.0/deed.zh-hans)（`prompts/` 的许可全文在 [`prompts/LICENSE`](prompts/LICENSE)）。两者是**聚集体**：CC BY-SA 不传染到代码，反亦然。
 - 第三方素材（随包字体 SIL OFL 1.1、KaTeX MIT、上游 DSH MIT）：逐项见 [`NOTICE.md`](NOTICE.md)。
 - **本仓不含任何插画／摄影素材**，也**不含任何凭据**。所有笔记在发布前经过确定性脱敏（机器路径与用户名已替换），并没有「顺手」保留原文。
 
