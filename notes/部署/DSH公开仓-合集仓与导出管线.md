@@ -96,6 +96,48 @@ git add -A && git commit -m "…"                                     # 2) 入�
 git push                                                            # 3) 推送（SSH 走 443）
 ```
 
+## 七、并入 `equilibrio-hidrostatico`（2026-10-12）
+
+**决定**：把 System Prompt 仓 `equilibrio-hidrostatico` 并进本合集仓（用户裁定）。动机是**省 GitHub pin 位**（此前正好 6 个仓、上限 6）。
+先前我以为"许可不同"是障碍 —— **收回**：本仓 README 本来就已声明「文本内容 CC BY-SA 4.0」，
+再进一批 CC BY-SA 的 prompt **不引入新许可**。
+
+**落点**（无目录冲突）：
+
+| 原来 | 现在 | 说明 |
+|---|---|---|
+| equilibrio 的 5 个 prompt | `prompts/*.md` | **由管线从活配置提取**，见下 |
+| equilibrio 的 `README.md` | `prompts/README.md` | 手写散文，源在 `prompt-research/README-公开.md` |
+| equilibrio 的 `LICENSE`（CC BY-SA 4.0 全文） | `prompts/LICENSE` | 源在 `prompt-research/LICENSE-CC-BY-SA-4.0.txt` |
+| equilibrio 的 `RESEARCH.md` | `docs/RESEARCH.md` | 源在 `prompt-research/相关研究与实践.md`（逐字节相同） |
+
+**那个仓名就是一个论点**（流体静力平衡＝System Prompt 的约束），合并后名字没了 ——
+论点留在 `prompts/README.md` 的题记里，并注明它原本是仓名。
+
+### 管线新增一个种类：`extract`
+
+prompt 的来源不是磁盘上的目录，而是**活配置**（`profiles/web/cordis.patch.yml` 里各 preset 的 `prefix:` 块）。
+若靠人手誊一遍，改 preset 后必然漂 —— 所以新增 `kind: 'extract'`：
+调 `tools/extract-prompts-from-live.py` 提取到临时目录，产物**照走 `put_file`**
+（即同样过脱敏与凭据闸门，没有哪一类文件可以绕过）。
+
+SPEC 新增四条：
+
+```python
+{'kind': 'extract', 'tool': 'tools/extract-prompts-from-live.py',
+ 'home_src': 'profiles/web/cordis.patch.yml', 'dst': 'prompts'},
+{'kind': 'file', 'src': 'prompt-research/README-公开.md', 'dst': 'prompts/README.md'},
+{'kind': 'file', 'src': 'prompt-research/LICENSE-CC-BY-SA-4.0.txt', 'dst': 'prompts/LICENSE'},
+{'kind': 'file', 'src': 'prompt-research/相关研究与实践.md', 'dst': 'docs/RESEARCH.md'},
+```
+
+用 `home_src` 而非 `src`：那些源住在 DSH home 里，不在工作区根。
+
+### 附带修的一处过期
+
+`README.md` 的「两个源码补丁」在我加进 `patches/sandbox-scratch` 后就成了三个 —— 已改标题与表。
+（`README.md` / `NOTICE.md` 属**手写资产**，管线不生成也不覆盖，只能直接改仓。）
+
 ### ⚠️ 三条实测要点（仍然有效）
 
 1. **`api.github.com` 会抽**：`gh repo create` 第一次 `EOF`（重试即成功），随后两次 `gh repo view` 又是 `EOF`。
