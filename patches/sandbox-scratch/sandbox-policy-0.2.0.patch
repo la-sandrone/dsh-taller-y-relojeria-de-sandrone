@@ -1,0 +1,167 @@
+diff --git a/packages/sandbox/sandbox-policy/src/index.ts b/packages/sandbox/sandbox-policy/src/index.ts
+index e97796d..b62ea41 100644
+--- a/packages/sandbox/sandbox-policy/src/index.ts
++++ b/packages/sandbox/sandbox-policy/src/index.ts
+@@ -32,6 +32,88 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
+ 
+ export { SANDBOX_MODES, setSandboxMode } from './session-mode.ts'
+ 
++/** Win32 device names that are illegal as a path component, in **any** spelling of the name. */
++const WIN32_RESERVED = new Set([
++  'CON', 'PRN', 'AUX', 'NUL',
++  ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
++  ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`),
++])
++
++/**
++ * Reject a scratch root whose spelling the classic Win32 path APIs cannot open.
++ *
++ * The traditional APIs (CreateFileW and friends) fail on names that POSIX tools
++ * happily create — `CON`, `NUL`, `COM1`, a component ending in a dot or a space.
++ * Failing here, at resolution time, turns "the agent's first write silently lands
++ * somewhere unusable" into a loud boot error. Only meaningful on Windows: a
++ * Win32-illegal name is a perfectly legal POSIX name, so this is deliberately
++ * not applied elsewhere.
++ */
++function isWin32LegalComponent(component: string): boolean {
++  if (component.length === 0) return false
++  // Win32 strips trailing dots/spaces before matching a device name, so strip the
++  // same way for the check: "CON." and "CON " are also the device.
++  const bare = component.replace(/[. ]+$/, '')
++  if (bare.length === 0) return false // ".", ".." or a name made only of dots/spaces
++  const stem = bare.split('.', 1)[0]!.toUpperCase()
++  return !WIN32_RESERVED.has(stem)
++}
++
++/**
++ * Resolve the optional `scratchRoot` from deployment config to an absolute path.
++ *
++ * Two things `resolveWorkspaceRoot` does not need to do:
++ *  1. expand environment references — `%TEMP%` on Windows, `$TMPDIR` elsewhere —
++ *     so the deployment can spell the platform temp area without hardcoding it;
++ *  2. refuse a spelling that resolves to something the host cannot use.
++ *
++ * Throws on an unusable spelling (fail-loud at boot, never a silent skip).
++ */
++function resolveScratchRoot(path: string): string {
++  // Precedence: explicit config > DSH_SCRATCH_ROOT > platform default.
++  // The env hop exists because the launcher owns the scratch directory's
++  // lifecycle (it must `mkdir -p` the host path before any sandboxed run —
++  // bwrap refuses a bind whose source is missing), and the launcher already
++  // hands the instance its identity through the environment (DSH_HOME &c).
++  // An implementation detail, not a user knob: the deployment spells the root
++  // in config; this lets the launcher keep the two in lockstep.
++  // (This is the harness process's own env, NOT the sanitized MCP child env.)
++  const expanded = path.replace(
++    /%([A-Za-z_][A-Za-z0-9_]*)%|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
++    (_whole, win: string, braced: string, bare: string) => {
++      const name = win ?? braced ?? bare
++      const value = process.env[name]
++      if (value === undefined || value === '') {
++        throw new Error(
++          `sandbox-policy: scratch root ${JSON.stringify(path)} references undefined environment variable ${name}`,
++        )
++      }
++      return value
++    },
++  )
++  if (!isAbsolute(expanded)) {
++    throw new Error(
++      `sandbox-policy: scratch root must be an absolute execution-world path, got ${JSON.stringify(expanded)}`,
++    )
++  }
++  if (process.platform === 'win32') {
++    // Split on both separators: the deployment may spell it either way.
++    const bad = expanded.split(/[\\/]+/).find((component) => !isWin32LegalComponent(component))
++    if (bad !== undefined) {
++      throw new Error(
++        `sandbox-policy: scratch root component ${JSON.stringify(bad)} is not a legal Win32 path name ` +
++          '(reserved device name, or a trailing dot/space) — the classic Win32 APIs cannot open it',
++      )
++    }
++  }
++  return expanded
++}
++
++/** The scratch area default per platform — `%TEMP%` spelling on Windows. */
++function defaultScratchRoot(): string {
++  return process.platform === 'win32' ? '%TEMP%\\.dsh-tmp' : '/tmp/.dsh-tmp'
++}
++
+ /** Preserve execution-world spelling; enforcing providers resolve filesystem identity on their host. */
+ function resolveWorkspaceRoot(path: string): string {
+   if (!isAbsolute(path)) throw new Error('sandbox-policy: workspace root must be an absolute execution-world path')
+@@ -43,8 +125,18 @@ function renderPolicyContext(policy: SandboxExecutionPolicy): string {
+   switch (policy.mode) {
+     case 'read-only':
+       return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
+-    case 'workspace-write':
+-      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
++    case 'workspace-write': {
++      const scratch = policy.scratchRoot === undefined
++        ? ''
++        : ` A scratch directory survives across calls here: ${JSON.stringify(policy.scratchRoot)}`
++          + ' — use it for throwaway intermediates you need in more than one call.'
++          + ' It is WORLD-READABLE (the platform temp area is traversable by every local user and'
++          + ' new directories take the process umask), so never write secrets, credentials, personal'
++          + ' data or internal addresses there. Its lifetime is not guaranteed either: it dies with a'
++          + ' reboot or the platform temp cleaner, so anything that must outlive the session belongs in'
++          + ' a real project directory, not here.'
++      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.${scratch}`
++    }
+     case 'danger-full-access':
+       return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
+     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
+@@ -76,6 +168,17 @@ export interface Config {
+    * `process.cwd()`). Normal agent calls use their session cwd instead.
+    */
+   workspaceRoot?: string
++  /**
++   * Absolute scratch directory bound back into `workspace-write` runs so it
++   * survives across calls (everything else under the platform temp area is
++   * per-call). `%VAR%` / `$VAR` are expanded. Defaults to `<temp>/.dsh-tmp`,
++   * where `<temp>` is `%TEMP%` on Windows and `/tmp` elsewhere. `DSH_SCRATCH_ROOT`
++   * overrides the default when this is unset (the launcher keeps the two in step).
++   *
++   * ⚠️ **World-readable by default** — the temp area is traversable by every
++   * local user and new directories take the process umask (0755).
++   */
++  scratchRoot?: string
+ }
+ 
+ /** Inputs that select the sandbox policy for one capability call. */
+@@ -114,6 +217,7 @@ export class SandboxPolicyService extends Service {
+     // No schema default: process.cwd() is resolved in the constructor so the
+     // stored root is always absolute regardless of how it was supplied.
+     workspaceRoot: z.string(),
++    scratchRoot: z.string(),
+   })
+ 
+   static inject = ['sessionProjections']
+@@ -122,6 +226,8 @@ export class SandboxPolicyService extends Service {
+   readonly defaultMode: SandboxMode
+   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
+   readonly workspaceRoot: string
++  /** The absolute scratch root bound back into sandboxed runs (see `resolveScratchRoot`). */
++  readonly scratchRoot: string
+   constructor(ctx: Context, config: Config) {
+     super(ctx, 'sandboxPolicy')
+     // schemastery (static Config) already filled `mode`; the cast records that
+@@ -129,6 +235,9 @@ export class SandboxPolicyService extends Service {
+     // the process cwd is real branching, resolved absolute either way.
+     this.defaultMode = config.mode as SandboxMode
+     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
++    this.scratchRoot = resolveScratchRoot(
++      config.scratchRoot ?? process.env.DSH_SCRATCH_ROOT ?? defaultScratchRoot(),
++    )
+ 
+     ctx.sessionProjections.register({
+       key: 'sandboxMode',
+@@ -166,6 +275,7 @@ export class SandboxPolicyService extends Service {
+     return {
+       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
+       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
++      scratchRoot: this.scratchRoot,
+       ...session === undefined ? {} : { sessionId: session.id },
+     }
+   }

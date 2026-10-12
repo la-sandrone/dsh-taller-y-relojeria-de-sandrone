@@ -1,0 +1,18 @@
+diff --git a/packages/sandbox/sandbox-local/src/profiles.ts b/packages/sandbox/sandbox-local/src/profiles.ts
+index 23c10d5..76bdbe8 100644
+--- a/packages/sandbox/sandbox-local/src/profiles.ts
++++ b/packages/sandbox/sandbox-local/src/profiles.ts
+@@ -18,6 +18,13 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
+   if (policy.mode === 'workspace-write') {
+     args.push('--tmpfs', '/tmp')
+     args.push('--bind', policy.workspaceRoot, policy.workspaceRoot)
++    // Scratch: bound AFTER the tmpfs on purpose — bwrap applies mounts in argv
++    // order (later wins), so this single path reaches the host while the rest of
++    // /tmp stays a fresh per-call tmpfs. Same path on both sides: the host
++    // spelling is what the agent is told to use.
++    if (policy.scratchRoot !== undefined) {
++      args.push('--bind', policy.scratchRoot, policy.scratchRoot)
++    }
+   }
+   return args
+ }

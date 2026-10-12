@@ -1,0 +1,108 @@
+# 补丁清单 —— 沙盒 scratch 落点（per-instance 跨调用可写目录）
+#
+# 这份文件是**开机护栏 guard_ui_patches 的输入之一**：`tools/dsh-ui-patches.py`
+# 按 `补丁/*/manifest.toml` 逐个处理 —— 与 `Markdown渲染/`、`空回复兜底/` 同属
+# 一份 patch 存档，一个目录一份清单。
+#
+# ── 为什么要有它（根因）──────────────────────────────────────────────
+#
+# worktree 沙盒把 `/tmp` 盖成 **per-call tmpfs**（官方 e2e 断言的语义：
+# "the write succeeds inside, the host /tmp stays untouched"）⇒ 沙盒内
+# `mkdir /tmp/foo` **一次调用就没了**，跨调用临时目录在 workspace-write 下
+# **不存在**。而"往用户工作区挖 .XXX-tmp"既越界又绕过 OS 的内存盘 GC。
+#
+# 修法：把宿主的一个子目录在 `--tmpfs /tmp` **之后**再 bind 回去。
+# bwrap 按 argv 顺序应用挂载（later wins）⇒ 仅这一个子目录落到宿主，
+# `/tmp` 其余部分保持每次全新。已实测：跨两次 bwrap 进程文件仍在，`/tmp` 其余清空。
+#
+# 官方没有任何"追加可写根"的配置字段（`sandbox-policy` 的 Config 只有
+# mode / workspaceRoot；`writableRoots()` 是硬编码的
+# `{workspaceRoot, '/tmp', tmpdir()}`）⇒ 只能打补丁，故有此件。
+#
+# 设计取向：**不把 `.dsh-tmp` 烤进源码**，而是给沙盒加一个通用的
+# `scratchRoot` 配置字段，落点由 deployment 配置给（见 profile 的 sandbox-policy 段）。
+
+[patch]
+name = "沙盒 scratch 落点（per-instance 跨调用可写目录）"
+slug = "sandbox-scratch"
+doc = "sandbox-scratch.md"
+# 护栏报错（漂移）时会把这句话打出来，让人当场知道代价是什么
+why = "workspace-write 下 `/tmp` 是每次调用全新的 tmpfs ⇒ 跨调用临时目录不存在；而 bwrap 的 profile 由源码硬编码（无「追加可写根」配置项）⇒ 只能打补丁"
+
+# ── 目标：要打补丁的文件 + 重放件 ────────────────────────────────────
+#
+# `applied_marker` 是**幂等判据**：文件里已经有它 ⇒ 认为补丁在 ⇒ 不重复打。
+# 刻意用**补丁引入的标识**（字面量），不用行号、也不用上下文 —— 行号会漂。
+#
+# 三处是一**个整体**：policy 提供字段、local 消费它、core 声明接口，任一缺席
+# 都不生效（TS 编译期就会挡）。故三处同引一份 patch，不做 target 级独立。
+
+[[target]]
+file = "packages/sandbox/sandbox/src/index.ts"
+patch = "sandbox-api-0.2.0.patch"
+applied_marker = "so a per-instance scratch area survives across"
+
+[[target]]
+file = "packages/sandbox/sandbox-local/src/profiles.ts"
+patch = "sandbox-local-bwrap-0.2.0.patch"
+applied_marker = "policy.scratchRoot !== undefined"
+
+[[target]]
+file = "packages/sandbox/sandbox-policy/src/index.ts"
+patch = "sandbox-policy-0.2.0.patch"
+applied_marker = "function resolveScratchRoot("
+
+# ── 升级核对：上游漂移就 fail-loud ──────────────────────────────────
+#
+# ⚠️ 这些断言**每次开机都跑，而且跑在「该不该打补丁」之前** ⇒ 它们必须
+#    **在补丁已打上的状态下也全部成立**。故只断言**补丁不改变**的上游结构：
+#    函数名、既有 profile 的参数顺序、Config 的既有字段、渲染入口。
+#
+# ⚠️ 整份清单共用：任一项不成立 ⇒ 三个 target 都不打（fail-closed）。
+#    宁可这次不打，也不要打出一份行为错误的补丁。
+#
+# ⚠️ TOML 的 inline table `{...}` **不许跨行**（数组可以跨行，它不行）。
+must_contain = [
+  { file = "packages/sandbox/sandbox/src/index.ts", text = "export interface SandboxExecutionPolicy" },
+  { file = "packages/sandbox/sandbox/src/index.ts", text = "workspaceRoot: string" },
+  { file = "packages/sandbox/sandbox-local/src/profiles.ts", text = "export function bwrapProfileArgs(policy: SandboxPolicy): string[]" },
+  { file = "packages/sandbox/sandbox-local/src/profiles.ts", text = "args.push('--tmpfs', '/tmp')" },
+  { file = "packages/sandbox/sandbox-policy/src/index.ts", text = "export interface Config" },
+  { file = "packages/sandbox/sandbox-policy/src/index.ts", text = "static Config: z<Config> = z.object({" },
+  { file = "packages/sandbox/sandbox-policy/src/index.ts", text = "function renderPolicyContext(policy: SandboxExecutionPolicy): string" },
+  { file = "packages/sandbox/sandbox-policy/src/index.ts", text = "resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy" },
+]
+
+# ── 构建：改的是 src，运行时装的是 lib ────────────────────────────────
+#
+# ⚠️ 这两个包的 `tsconfig.json` 把 outDir 定在 `lib/types`（**只出 .d.ts**），
+#    真正被 import 的 `lib/index.js` 是 **tsdown 打的包** ⇒ 只跑 tsc 等于没生效
+#    （实测：tsc -b 返回 0、tsbuildinfo 更新，但 lib/index.js 的 mtime 纹丝不动）。
+#    `tsdown.config.ts` 的 include glob 是 `packages/*/*` ⇒ 本包已被覆盖，
+#    入口取自 tsc 产出的 `lib/types/*.js`。故两步缺一不可。
+#
+# artifact 只能写一个：三个包由**同一次**运行一起重建，取主修包当哨兵即可。
+[build]
+artifact = "packages/sandbox/sandbox-policy/lib/index.js"
+run = [
+  "npx tsc -b tsconfig.host.json",
+  "npx tsdown --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-sandbox --filter @deepseek-ai/dsh-sandbox-local --filter @deepseek-ai/dsh-sandbox-policy",
+]
+
+# ── 上游漂移时的处置提示（护栏报错会打出来）──────────────────────────
+[on_drift]
+hint = """
+上游改了上面那些结构之一 ⇒ **不要盲目重打**（补丁是上下文差分，打不进去会硬失败）：
+  1. 先确认三处还在：`SandboxExecutionPolicy` 接口、`bwrapProfileArgs` 与其
+     `args.push('--tmpfs', '/tmp')` 那一行、`SandboxPolicyService` 的 `static Config`
+     与 `resolve()`；
+  2. **若上游已自行提供"追加可写根"/scratch 配置**，本补丁**应当删除**：
+     删掉 `补丁/sandbox-scratch/` 整个目录即可，护栏下次开机不再处理它。
+     删前先确认上游那个配置真的能落到 bwrap（`bwrapProfileArgs` 里能看到 bind）；
+  3. 若只是周边漂移：在当前版本源码里重新定位，改好后用
+     `git -C 原始代码研究/<版本> diff -- packages/sandbox/ > scratch-policy-<版本>.patch`
+     生成新件，并把新文件名写回各 [[target]].patch（旧件留着或删掉都行）；
+  4. 重打后**回读四件事**：三个 `lib/index.js` 里都能 grep 到 `scratchRoot`、
+     `tsc -b` rc=0、profile 的 `scratchRoot` 已填、真机跑一轮验证
+     「沙盒内写 /tmp/<scratch>/x，下一次调用仍在；写 /tmp/other 则不在」。
+"""

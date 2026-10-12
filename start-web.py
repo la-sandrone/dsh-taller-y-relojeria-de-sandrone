@@ -909,6 +909,82 @@ def load_secrets(launcher_dir: Path) -> tuple[dict[str, str], list[str]]:
     return secrets, report
 
 
+def scratch_root() -> str:
+    """沙盒 scratch 落点的平台口径。
+
+    显式覆盖优先：环境里已有 `DSH_SCRATCH_ROOT` 就用它（守卫报错时的自救手段
+    就是设这个变量 —— 若这里无条件覆盖，那句话就是空话）。
+
+
+    普通 Unix 一条常量即可（`/tmp` 是内存盘 + systemd-tmpfiles 管 GC）。
+    Windows 上没有 `/tmp`，按传统口径落到 `%TEMP%` 下的 `.dsh-tmp`。
+    """
+    explicit = os.environ.get("DSH_SCRATCH_ROOT")
+    if explicit:
+        return explicit
+    if os.name == "nt":                       # pragma: no cover — Windows 分支
+        # ⚠️ **不猜**。TEMP 是唯一的权威口径，理由不是洁癖而是实测：
+        #    这台机器的 %TEMP% 被有意重定向到 ImDisk 内存盘（<R盘>:\TEMP）——
+        #    而"猜"的写法（回退到 ~\AppData\Local\Temp）会静默落到 **C: 的 SSD**，
+        #    也就是用户特意挪开的那个盘。落错地方还不报错，是最坏的失败模式。
+        temp = os.environ.get("TEMP") or os.environ.get("TMP")
+        if not temp:
+            die("Windows 下 TEMP / TMP 都没设 ⇒ 无法确定 scratch 落点。\n"
+                "   这里**不猜**：猜出来的可能是 C: 上的 SSD 临时目录，而不是你\n"
+                "   重定向后的内存盘 —— 落错地方且不报错，比拒绝启动糟得多。\n"
+                "   修法二选一：\n"
+                "     · 设 DSH_SCRATCH_ROOT=<绝对路径> 再启动\n"
+                "     · 或把 TEMP 环境变量设回来")
+        return os.path.join(temp, ".dsh-tmp")
+    return "/tmp/.dsh-tmp"
+
+
+def guard_scratch_root() -> None:
+    """门 · 沙盒 scratch：**必须存在**，否则 bwrap 起不来。
+
+    为什么必须在这里建（2026-10-12 实测）：`bwrap --bind <src> <dst>` 在 `<src>`
+    不存在时**直接失败**（`Can't find source path …`，rc=1）⇒ 沙盒里**每条命令全挂**。
+    换言之 scratch 目录是**沙盒的前置条件**，不是"用到再建"的东西。
+
+    故本守卫刻意 fail-loud：建不出来就拒绝开机，而不是让每条 bash 调用各自失败
+    （失败点在开机一处，比散落在几百次调用里好定位得多）。
+
+    **不清空**：寿命交给平台（tmpfs 重启即清；systemd-tmpfiles 到点清）。
+    开机清一次反而和插入/绑定抢时序 —— 目录原地留着最稳。
+    """
+    root = scratch_root()
+    try:
+        Path(root).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        die(f"沙盒 scratch 目录建不出来：{root}\n"
+            f"   原因：{exc}\n"
+            f"   ⚠️ 这个目录必须存在，否则 bwrap 的 --bind 失败 ⇒ 沙盒里所有命令都起不来。\n"
+            f"   要改落点：设 DSH_SCRATCH_ROOT=<存在的绝对路径> 再启动。")
+
+    # 探针测写 —— mkdir 成功 **不等于** 写得进去。
+    # 目录「已存在但只读 / 属他人 / 挂在只读介质上」时，exist_ok=True 会**静默返回**，
+    # 而 bwrap 的 --bind 照样成功（目录存在）⇒ 失败推迟到 agent 第一次写入才暴露。
+    # 这正是 用户笔记/部署/沙盒外写操作准入.md 那条
+    # 「唯一无条件、与 policy 无关的纪律：探针测写」要挡的情形。
+    probe = Path(root) / f".dsh-write-probe.{os.getpid()}"
+    try:
+        with open(probe, "w") as fh:
+            fh.write("")
+    except OSError as exc:
+        die(f"沙盒 scratch 目录**存在但写不进去**：{root}\n"
+            f"   原因：{exc}\n"
+            f"   ⚠️ 只 mkdir 不测写会漏掉这种情况 —— 而 bwrap 的 --bind 会照样成功，\n"
+            f"      于是失败推迟到 agent 第一次写入才暴露（散落在几百次调用里）。\n"
+            f"   修法二选一：\n"
+            f"     · 设 DSH_SCRATCH_ROOT=<可写的绝对路径> 再启动\n"
+            f"     · 或修好 {root} 的权限 / 挂载")
+    else:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+
+
 def build_instance_env(paths: dcfg.Paths, record_dir: Path) -> None:
     """声明实例身份 → 环境净化 → 启动门 → 注入自家 preload 与 bin/。就地改 os.environ。
 
@@ -921,6 +997,9 @@ def build_instance_env(paths: dcfg.Paths, record_dir: Path) -> None:
     os.environ["DSH_HOME"] = str(paths.home_dir)
     os.environ["DSH_TRACE_LOG"] = str(record_dir / "fetch-trace.log")
     os.environ["DSH_H1_MODE_FILE"] = str(record_dir / "h1-mode")
+    # 沙盒 scratch 落点（与 DSH_HOME 同类：实例身份/生命周期由启动器拥有）。
+    # 普通 Unix 上是常量；Windows 口径走 %TEMP%。
+    os.environ["DSH_SCRATCH_ROOT"] = scratch_root()
 
     before = dict(os.environ)
     if denv.sanitize(quiet=True) != 0:
@@ -1446,6 +1525,7 @@ def run_instance(args, paths: dcfg.Paths, config: dcfg.LauncherConfig, port: int
     guard_cloudflared(paths)
     python = sys.executable
     guard_patch_layers(paths, inst.dir, python)
+    guard_scratch_root()
     guard_ui_patches(paths, inst.dir, python)
     guard_profile_links(paths, inst.dir, python)
     if args.background:

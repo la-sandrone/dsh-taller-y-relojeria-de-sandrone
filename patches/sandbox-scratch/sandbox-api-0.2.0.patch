@@ -1,0 +1,20 @@
+diff --git a/packages/sandbox/sandbox/src/index.ts b/packages/sandbox/sandbox/src/index.ts
+index 3cc0ec9..5161f18 100644
+--- a/packages/sandbox/sandbox/src/index.ts
++++ b/packages/sandbox/sandbox/src/index.ts
+@@ -50,6 +50,15 @@ export interface SandboxExecutionPolicy {
+    * for agentless calls, which fall back to per-call backend state.
+    */
+   sessionId?: SessionId
++  /**
++   * Absolute host directory bound back into `workspace-write` executions *after*
++   * the ephemeral `/tmp` tmpfs, so a per-instance scratch area survives across
++   * runs while everything else under `/tmp` stays per-call. Unset ⇒ no bind.
++   *
++   * ⚠️ bwrap applies mounts in argv order (later wins): the tmpfs would shadow
++   * this bind if it came first, so `bwrapProfileArgs` must push it last.
++   */
++  scratchRoot?: string
+ }
+ 
+ /**
