@@ -102,9 +102,11 @@ must_match = [
 #    （真正保底的是「刚打过补丁」这条，它会直接强制重建，不走 mtime 启发式）。
 [build]
 artifact = "packages/llm/llm-deepseek/lib/index.js"
+# ⚠️ 不经过 pnpm：检出的 packageManager 钉 11.28.5，而本机活跃 pnpm 是 11.7.0，
+#    corepack 会让 `pnpm exec` 直接报版本不符（2026-10-17 实测 rc=1）。
 run = [
-  "pnpm exec tsc -b tsconfig.host.json",
-  "pnpm exec tsdown --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-llm-deepseek --filter @deepseek-ai/dsh-llm-pi-ai",
+  "node ./node_modules/typescript/bin/tsc -b tsconfig.host.json",
+  "node ./node_modules/tsdown/dist/run.mjs --config-loader native --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-llm-deepseek --filter @deepseek-ai/dsh-llm-pi-ai",
 ]
 
 # ── 上游漂移时的处置提示（护栏报错会打出来）──────────────────────────

@@ -26,7 +26,7 @@
 配置是**热加载**的——改完几秒内生效，**不需要重启**。所以：
 
 ```bash
-cd $HARNESS/dsh-domus-0.1.7-rc.2/profiles/web
+cd $HARNESS/dsh-domus-0.2.1-rc.2/profiles/web
 
 # 看现在有哪些版本快照（按时间）
 ls -lt cordis.patch.yml*
@@ -40,7 +40,7 @@ cp cordis.patch.yml.bak-XXX cordis.patch.yml.new && mv -f cordis.patch.yml.new c
 ### 改配置前必做的事（护栏）
 
 ```bash
-DSH_HOME=$HARNESS/dsh-domus-0.1.7-rc.2 \
+DSH_HOME=$HARNESS/dsh-domus-0.2.1-rc.2 \
 python3 tools/check_patch_layers.py --profile web
 # 退出码 0 = 可以启动；1 = 有重复 id，会炸，别启动
 ```
@@ -103,6 +103,7 @@ cd $HARNESS
 | profile 配置 | `…/cordis.patch.yml.orig-mcp` | 更早的 MCP 参考版 —— 同上，已移入归档 |
 | `fast_filesystem.py` | `cp fast_filesystem.py.pre-d10-d11-debug fast_filesystem.py` | 回到 D10/D11 改动前（干净基线） |
 | `fast_filesystem.py` | `git -C <挂载d>:/DataServices/MCP/wrap revert 8e6d8a1` | 同上的 git 版 |
+| **整个版本（0.2.1 → 0.2.0）** | `dsh-domus-0.2.0-rc.2/`（原样保留，1.7 G，含对话与 cache） + 把 `当前配置.toml` 的 version 改回 `v0.2.0-rc.2` | 2026-10-17 转正前的完整 home；它的依赖是 0.2.0 那套，回滚后需要重启 |
 | 影子实例 | `rm -rf dsh-domus-probe` | 消耗品，删了无损失 |
 | preset 引擎行（wwt→ptc） | 原 `_scratch/backup-retire-wwt-20260927-071448/`；2026-10-11 随 `_scratch` 退役清掉（**已确认不构成损失**） | 三处替换前原文（5 预设 × id/name 两行），2026-09-27。真要重放，跑 `retire-wwt.py`（本体在 git 历史里）的逆操作 |
 | 本地 liangshen 副本 | 原 `_scratch/liangshen-preset-retired-20260927-071444.tar.gz`；2026-10-11 随 `_scratch` 退役清掉（**已确认不构成损失**） | 自己改编的旧副本已退休；上游 `@linxin666/dsh-liangshen` 保留不动 |
@@ -195,7 +196,7 @@ cd $HARNESS
 
 | 我想做什么 | 不靠 AI 的做法 |
 |---|---|
-| 看某个工具到底有没有挂上 | `DSH_HOME=$HARNESS/dsh-domus-0.1.7-rc.2 python3 tools/list_tools.py --grep <名字>` |
+| 看某个工具到底有没有挂上 | `DSH_HOME=$HARNESS/dsh-domus-0.2.1-rc.2 python3 tools/list_tools.py --grep <名字>` |
 | 看某次会话里工具调用报了什么错 | `python3 tools/session_tool_audit.py --session <id> --errors-only` |
 | 查配置会不会撞 id | `python3 tools/check_patch_layers.py --profile web` |
 | 查改配置的代价（会不会卡很久） | `python3 tools/session_index_survey.py` |

@@ -1,0 +1,57 @@
+diff --git a/packages/client/ui-conversation/src/client/user-text/UserText.tsx b/packages/client/ui-conversation/src/client/user-text/UserText.tsx
+index d8cd8f34..1cb31301 100644
+--- a/packages/client/ui-conversation/src/client/user-text/UserText.tsx
++++ b/packages/client/ui-conversation/src/client/user-text/UserText.tsx
+@@ -1,13 +1,27 @@
+ /** User-text presentation delegates evaluation to its data-layer document and renders JSON business nodes. */
+ import { Fragment, useEffect, useMemo } from 'react'
+ import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
+-import { ReferenceChip, UserTextRun } from '@deepseek-ai/dsh-client-ui-primitives'
++import { MarkdownText, ReferenceChip, UserTextRun } from '@deepseek-ai/dsh-client-ui-primitives'
+ import type { UserTextNodeProps } from '../contract/slots.ts'
+ import type { UserTextNode } from '../contract/user-text.ts'
+ import css from './UserText.module.css'
+ 
+ type UserTextOwner = Parameters<FactoryComponentPropsOf<'conversation.user.text'>['renderSlot']>[1]
+ 
++/**
++ * Localized chrome baked into user-authored Markdown renders.
++ * A module-level constant keeps the identity stable across renders, which the
++ * memoized Markdown renderer relies on to keep its parse cache.
++ */
++const USER_MARKDOWN_LABELS = {
++  code: {
++    copyLabel: '复制',
++    copiedLabel: '已复制',
++    toolbarLabels: { codeLabel: '代码块', wrapLabel: '自动换行', unwrapLabel: '取消自动换行' },
++  },
++  footnotes: '脚注',
++}
++
+ /**
+  * Render original text through pure matching rules and business-owned node Slots.
+  * A failed parse retains the entire original text and reports the rule error.
+@@ -33,6 +47,14 @@ export function UserText({
+   }, [failed, error, reportTransformFailure])
+   const content = useMemo(() => nodes === undefined ? <UserTextRun text={text} /> : <>{nodes.map((node) => {
+     const raw = text.slice(node.start, node.end)
++    // User-authored plain text renders as Markdown (local deployment patch).
++    // Preview rows (ellipsis) keep plain text, and reference chips stay their
++    // own nodes rendered through the Slot below, so chips keep working.
++    if (node.id === 'text' && !ellipsis) {
++      return <Fragment key={`${node.id}:${node.start}`}>
++        <MarkdownText text={node.data.display ?? raw} labels={USER_MARKDOWN_LABELS} />
++      </Fragment>
++    }
+     // The node ID determines its payload; TypeScript does not distribute this enclosing owner over the node union.
+     const owner = { node, raw, interactive } as UserTextOwner
+     return <Fragment key={`${node.id}:${node.start}`}>
+@@ -41,7 +63,7 @@ export function UserText({
+         fallback: <UserTextRun text={node.id === 'text' ? node.data.display ?? raw : raw} />,
+       })}
+     </Fragment>
+-  })}</>, [nodes, text, interactive, renderSlot])
++  })}</>, [nodes, text, interactive, renderSlot, ellipsis])
+   return <span className={ellipsis ? css.ellipsis : css.root}>{content}</span>
+ }
+ 

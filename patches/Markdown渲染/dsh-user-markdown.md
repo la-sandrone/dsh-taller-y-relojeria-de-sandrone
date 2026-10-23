@@ -1,9 +1,43 @@
-# dsh-user-markdown 补丁存档（方案 A · 0.1.5 版）
+# dsh-user-markdown 补丁存档
 
-> 让用户消息气泡（user / steering）按 Markdown 渲染的本地补丁。
-> 性质：**改官方源码**（`ui-chat/src/client/chat/MessageItem.tsx`），非插件。
-> 官方立场：2026-07-23 决策文档把"用户输入是否格式化"定义为**产品选择**、默认按字面渲染
+> 让用户消息正文按 Markdown 渲染的本地补丁。性质：**改官方源码**，非插件。
+> 官方立场：2026-07-23 决策文档把「用户输入是否格式化」定义为**产品选择**、默认按字面渲染
 > ——本补丁即本地做出的那次选择。
+
+## ★ 2026-10-17：0.2.1 版重写（**当前生效的就是这一版**）
+
+上游在 0.2.1 把用户消息渲染整条管线重构了：`projectUserText` 投影函数被删，改成
+「规则求值 → JSON 节点 → keyed 节点槽」：
+
+```
+MessageItem.UserStyleBubble → conversation.chat.user.content
+  → conversation.user.text（规则把原文切成节点）
+    → conversation.user.text.node（key='text' 默认 PlainUserText → UserTextRun 裸文本）
+```
+
+⟹ 旧补丁（改 `MessageItem.tsx`、依赖 `projectUserText`）**结构性失效**，已归档到 `历史/`。
+
+**新补丁改在节点层**（`packages/client/ui-conversation/src/client/user-text/UserText.tsx`）：
+`text` 节点直接渲染 `MarkdownText`；引用 chip（session / skill / goal）仍是独立节点、照旧走 Slot，
+**点击行为不受影响**；预览行（`ellipsis`）保持纯文本，避免队列里出现块级排版。
+
+| 项 | 值 |
+|---|---|
+| 补丁文件 | `UserText-0.2.1.patch`（+18 / −1 行，单文件） |
+| 幂等判据 | `applied_marker = "USER_MARKDOWN_LABELS"` |
+| 构建 | `node ./node_modules/typescript/bin/tsc -b tsconfig.client.json` + `npm --prefix packages/client/ui-conversation run bundle`（**绕开 pnpm 版本门禁**，见下） |
+| 产物 | `packages/client/ui-conversation/lib/client.js`（≈777 KB） |
+| 实测 | 2026-10-17：旧对话 Markdown 正常；`/humanizer-zh` 技能 chip 可点击且能加载正文（两条边界同时成立） |
+
+**为什么构建命令不走 pnpm**：检出钉 `pnpm@11.28.5`，而本机活跃 pnpm 是 11.7.0，
+`pnpm exec` 会因 corepack 版本不符直接 rc=1（看起来像构建失败）。三份 UI 补丁的
+`[build].run` 已全部改成直调 `node` / `npm --prefix`，与包管理器版本解耦。
+
+**历史版本（0.1.5 / 0.2.0 的 MessageItem 方案）** 保留在下方与 `历史/`，仅作参考，**不要再重打**。
+
+---
+
+# 0.1.5 版存档（历史）
 
 ## 状态
 

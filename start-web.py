@@ -88,6 +88,14 @@ READ_CHUNK = 65536       # host 输出搬运的块大小
 BASH = "/usr/bin/bash"
 SS = shutil.which("ss") or "/usr/sbin/ss"
 
+# 监听地址：**永远显式传 --host**，不让 profile 里的受管块决定。
+# 理由（2026-10-20 实测砖过一次）：remote-web-ui 的「局域网访问」开关会往
+# cordis.patch.yml 写 host: '<局域网 IP>'，于是 127.0.0.1 不再监听；而它的
+# 配对面板**只在回环可用** —— 一绑定就锁死，连配置界面都够不着。
+# --host 旗标优先级高于受管块（apps/cli/reference/README.zh.md:111），
+# 所以注入它就等于永久免疫。想绑别的地址，改这一行，别去改 profile。
+BIND_HOST = "127.0.0.1"
+
 # 凭据**不在这里**了（2026-10-08 迁出；迁移由 tools/migrate-keys-to-env.py 做，
 # 它读值、写文件、**只印长度与不可逆指纹** —— 用户红线：「不要把 key 读出来」）。
 #   读法见 load_secrets()：**环境优先**（`export` 一句即可临时覆盖或轮换），
@@ -1158,6 +1166,36 @@ def guard_profile_links(paths: dcfg.Paths, record_dir: Path, python: str) -> Non
 #  开跑
 # ═══════════════════════════════════════════════════════════════════
 
+def detect_lan_bind(paths: dcfg.Paths) -> str | None:
+    """返回 profile 补丁里**已启用**的局域网绑定 host（没有则 None）。
+
+    remote-web-ui 的受管块长这样：
+        # --- remote-web-ui lan-bind block (managed - do not edit) ---
+        - id: webserver
+          config:
+            host: '<lan-ip>'
+        # --- end remote-web-ui lan-bind block ---
+    首尾标记行本身就是 YAML 注释，所以只能靠「块内有没有未注释的 host:」判断启用。
+    """
+    patch = paths.home_dir / "profiles" / "web" / "cordis.patch.yml"
+    try:
+        lines = patch.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for i, line in enumerate(lines):
+        if "remote-web-ui lan-bind block" not in line:
+            continue
+        for follow in lines[i + 1: i + 16]:
+            s = follow.strip()
+            if s.startswith("--- end"):
+                break
+            if not s or s.startswith("#"):
+                continue
+            if s.startswith("host:"):
+                return s.split(":", 1)[1].strip().strip("'\"")
+    return None
+
+
 def spawn_host(paths: dcfg.Paths, port: int, log_handle=None) -> subprocess.Popen:
     """起 host。
 
@@ -1168,8 +1206,13 @@ def spawn_host(paths: dcfg.Paths, port: int, log_handle=None) -> subprocess.Pope
     if not pnpm:
         die("PATH 里找不到 pnpm —— 无法启动 host。\n"
             "   净化会把本仓库的 PATH 条目剔掉；本机上 pnpm 来自 /usr/bin/pnpm（corepack）。")
+    lan = detect_lan_bind(paths)
+    if lan:
+        say(f"⚠️  profile 里有**已启用**的局域网绑定受管块 host={lan}")
+        say("    它会让 127.0.0.1 不再监听，而配对面板只在回环可用 —— 会锁死。")
+        say(f"    本次启动已用 --host {BIND_HOST} 覆盖（旗标优先于受管块）。")
     common = dict(cwd=str(paths.checkout_dir), stdin=subprocess.DEVNULL)
-    args = [pnpm, "dsh", "web", "--port", str(port), "--no-open"]
+    args = [pnpm, "dsh", "web", "--host", BIND_HOST, "--port", str(port), "--no-open"]
     if log_handle is not None:
         return subprocess.Popen(args, stdout=log_handle, stderr=subprocess.STDOUT, **common)
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

@@ -47,12 +47,14 @@
 
 ## 三、手搓补丁指纹（升级后必须逐条比对）
 
-这三处是 2026-09-26 我们**手工换锚**的产物，上游 0.4.3 恰好也动了锚点（皮肤行重新锚定到原生面板列表），**有被冲掉的风险**。
+前两条是 2026-09-26 手工换锚的产物（上游 0.4.3 恰好也动了锚点，皮肤行重新锚定到原生面板列表），**有被冲掉的风险**；
+第三条是 2026-10-23 打的移动端适配补丁，**插件更新必丢**。
 
 | 文件 | sha256（升级前） |
 |---|---|
 | `dsh-domus-0.1.7-rc.2/profiles/web/packages/dsh-suigintou-ui-patches/lib/client.js` | `3d50884d8c0d9b09d4410b327f5756a3a8b0de6d78b8a005982b7ea0f04c0896` |
 | `dsh-domus-0.1.7-rc.2/skins/navia/patches.css` | `b06bd8db76e5c583604a3c4e969aba9169b19b1db85872544cdd9934f1b7c37d` |
+| `dsh-domus-0.2.1-rc.2/profiles/web/node_modules/@linxin666/dsh-remote-web-ui/lib/client.js` | `50cfee1b63d9eedc27ccfa6d28a621fbbcd630ba8065adb34e252ab4d10f460c`（**改后**；原版 `41984638…` 在 `.bak-frameheight`） |
 
 注意：`dsh-domus-0.1.7-rc.2/profiles/web/cordis.patch.yml` 的哈希**会变**（本次提交已含用户设置漂移 light→dark / low→high），比对时只看那两处换锚文件是否还在，不要整体比对。
 
@@ -65,6 +67,17 @@
 5. 跑 `python3 tools/check-profile-links.py`（profile 链接护栏）
 6. 浏览器侧目视：头部标题集群居中 / headerActions 左贴 / crumb 限宽 / navia 毛玻璃 / 壁纸库 inventory.total 应为 78
 7. 更新后**立刻复查长文本粘贴截断**是否仍在（0.4.3 可能顺手改掉，也可能无关）
+8. **手机端适配补丁是否被冲掉**（0.2.1 home，2026-10-23 打）：
+
+   ```bash
+   grep -c 'class\^=' \
+     dsh-domus-0.2.1-rc.2/profiles/web/node_modules/@linxin666/dsh-remote-web-ui/lib/client.js
+   ```
+
+   → 应为 `1`（`class^=` 这个写法在全文件只有这一处，实测 2026-10-23）。
+   若为 `0`，说明插件更新覆盖了补丁，**手机端页面底部会重新露出一块背景**。
+   重打方法与根因（`_centerCol` 在 0.2.1-rc.2 构建产物里已不存在）见
+   `部署/启动器绑定地址与远程访问砖.md` §④。
 
 ## 五、待办（升级后接着做）
 

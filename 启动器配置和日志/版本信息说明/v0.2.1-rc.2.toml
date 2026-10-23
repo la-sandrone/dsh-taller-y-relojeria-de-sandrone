@@ -1,0 +1,48 @@
+# 版本信息说明 · v0.2.1-rc.2
+#
+# 结构与语义定义见同目录的 v0.1.7-rc.2.toml。
+# 文件名必须逐字节等于 原始代码研究/v0.2.1-rc.2 与 当前配置.toml 里的 version。
+#
+# ✅ 2026-10-17 18:44 已切正：`当前配置.toml` 的 version 指向本文件，主实例跑在 9007。
+#    home `dsh-domus-0.2.1-rc.2` 由 0.2.0 现役 home 派生（tools/stage-upgrade-home.py），
+#    试跑（9011）通过后经 tools/cutover.sh 搬对话转正。
+
+version = "v0.2.1-rc.2"
+
+[upstream]
+# 检出 package.json 里的 "version"
+version = "0.2.1-rc.2"
+# 检出 HEAD 上的 git tag（`git -C 原始代码研究/v0.2.1-rc.2 describe --tags` 实测）
+git_tag = "dsh-v0.2.1-rc.2"
+
+[profile]
+# 该基座的 profile 必须具备的标记：在
+#   <home>/profiles/web/cordis.patch.yml
+# 里【逐字】查找，一个都不能少。
+#
+# 这次用的是**带版本号的真标记**（0.2.0 那份写的是 "0.1.7 迁移物"，它只证明
+# 「≥0.1.7 代」，证不了代际 —— 0.2.0 的版本说明里自己就点了这个缺陷）。
+# 标记由 tools/stage-upgrade-home.py 的调用者手工插入首行；重做 home 时要重新插。
+required_markers = ["0.2.1 迁移物（staged-from-0.2.0-rc.2）"]
+
+# ─── 历史 ───────────────────────────────────────────────────────────
+#
+# ⚠️ 2026-10-20 修正（用户手工）：下面三行原先**漏了行首 `#`** ⟹ 裸文本进了 TOML，
+#    tomllib 解析失败（tools/dsh_config.py 用 tomllib.load，缺文件/解析错都是拒绝启动），
+#    表现就是「开机不了」。已补注释符。**别把它们改回无 `#` 的样子。**
+# 2026-10-17  v0.2.1-rc.2 试跑实例就绪（9011），preflight 0 禁用、better-sidebar 升 0.28.0 后无 pending。
+# 2026-10-17 18:44  **已切正**：停双方 → 搬对话（213 个）→ 改当前配置 → 主实例 9007 起于新版本。
+#                解析拦截层 265 条；Markdown 补丁（路线 A）已重建；搜索闸门随 home 带过来。
+#                新 home 已 git init（首次提交由启动器在下次开机前完成）。
+#             · 上游 2026-10-17T08:16:33Z 发布，正文只有两条：适配 V4.1-Flash-1017、
+#               适配 DeepSeek Search/Fetch API。本次为**非同常规升级**（不在 42 天卡池周期内）。
+#             · 调查与方案：用户笔记/升级/DSH升级-0.2.1-rc.2-调查与方案.md
+#             · 6 个 bundle 随迁（preflight 会静默禁用的那 6 个）：
+#               dsh-tool-session-query 0.2.0-rc.2 → 0.2.1-rc.2（精确钉）
+#               perrylink/plugin-kit 0.1.9 → 0.1.17；perrylink/skill-pack-security-provider 2.2.16 → 2.2.24
+#               dsh-industry-research 0.3.15 → 0.3.19；dsh-plugin-guide 0.3.19 → 0.3.33
+#               dsh-research-report 0.3.16 → 0.3.22
+#             · 未动（静态判定通过）：dsh-web-all 0.4.6 / better-sidebar 0.24.1 /
+#               dsh-context 0.56.2 / dsh-session-insights 0.3.0 —— web-all 的运行时表现是本次第一风险。
+#             · 原生搜索闸门（tool-web: search:false，10 处）已随 home 复制带过来。
+#             · 回滚：删除本 home 即可；现役 0.2.0 未受任何改动（除已生效的搜索闸门）。

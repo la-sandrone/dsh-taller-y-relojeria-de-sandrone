@@ -1,16 +1,32 @@
 # 补丁清单 —— 用户消息 Markdown 渲染（dsh-user-markdown）
 #
 # 这份文件是**开机护栏 guard_ui_patches 的唯一输入**：它把原来写在文档里、
-# 靠人每次升级手动执行的「4 项结构核对 + 重打 + 重建」变成数据 + 断言。
+# 靠人每次升级手动执行的「结构核对 + 重打 + 重建」变成数据 + 断言。
 #
-# ── 为什么要有它（根因，2026-10-08 查实）────────────────────────────
+# ── 为什么要有它（根因，2026-10-08 查实）──────────────────────────────
 #
 # 这个补丁改的是【基座检出的源码】⇒ **升级 = 新检出 = 补丁消失**；
 # 存档原先放在 per-version 的 home 里、而且两个 home 各一份（所谓"唯一存档"是假的）。
 # 于是每次升级都得靠人照文档重做一遍 —— 用户话：「每次升级一次又要到了打 markdown
 # 和其他 ui 补丁的时间」，而他**大量依赖 markdown 语法输入**。
 #
-# 所以：本体与存档都搬到**版本无关**的 `补丁/`，重放交给开机护栏。
+# 所以：本体与存档都搬到**版本无关的** `补丁/`，重放交给开机护栏。
+#
+# ── 2026-10-17 重写（0.2.0 → 0.2.1）─────────────────────────────────
+#
+# 上游把用户消息渲染整条管线重构了：`projectUserText` 投影函数被删，
+# 改为「规则求值 → JSON 节点 → keyed 节点槽」：
+#
+#   MessageItem.UserStyleBubble → conversation.chat.user.content
+#     → conversation.user.text（规则切节点）
+#       → conversation.user.text.node（key='text' 默认 PlainUserText → UserTextRun 裸文本）
+#
+# ⟹ 旧补丁（改 MessageItem.tsx + 依赖 projectUserText）**结构性失效**，无法重打。
+# 新补丁改在**节点渲染这一层**：`text` 节点直接渲染 MarkdownText，
+# 引用 chip 仍是独立节点、照旧走 Slot（点击行为不受影响）；
+# 预览行（`ellipsis`）保持纯文本，避免队列里出现块级排版。
+#
+# 旧件已归档到 `历史/`，**不要再重打**。
 
 [patch]
 name = "用户消息 Markdown 渲染"
@@ -22,61 +38,59 @@ why = "用户大量依赖 markdown 语法输入；官方默认按字面渲染（
 # ── 目标：要打补丁的文件 + 重放件 ──────────────────────────────────
 #
 # `applied_marker` 是**幂等判据**：文件里已经有它 ⇒ 认为补丁在 ⇒ 不重复打。
-# 刻意用函数名而不是行号/上下文 —— 行号会漂。
+# 刻意用补丁引入的标识（常量名），不用行号/上下文 —— 行号会漂。
 
 [[target]]
-file = "packages/client/ui-chat/src/client/chat/MessageItem.tsx"
-patch = "MessageItem-0.2.0.patch"
-applied_marker = "function projectUserContent("
+file = "packages/client/ui-conversation/src/client/user-text/UserText.tsx"
+patch = "UserText-0.2.1.patch"
+applied_marker = "USER_MARKDOWN_LABELS"
 
 # ── 升级核对：上游漂移就 fail-loud ────────────────────────────────
 #
-# 这四项**来自补丁文档里原有的手工核对清单**（`dsh-user-markdown.md` 的
-#「版本升级立即排查清单」第 2 步）。核对不通过 = 上游把这些结构改了
-# ⇒ 补丁**不能**盲目重打（会打出错误行为，或者把 chip 点击弄哑）。
-#
-# 判据是「结构还在不在」，不是「行号对不对」—— 后者每次上游改动都会假报警。
+# 断言必须**在补丁已打上的状态下也成立**（护栏每次开机先核对、再决定打不打）。
+# 所以只断言**补丁不改变**的上游结构：
+#   1. 用户文本组件仍在、仍按节点渲染（补丁插在节点循环里）
+#   2. `text` 节点的注册仍在（补丁不改它，只是让正文不走它）
+#   3. MarkdownText 仍从 ui-primitives 导出（补丁的渲染目标）
+#   4. 预览用的 ellipsis 入口仍在（补丁靠它区分聊天与预览）
 
 [verify]
 # ⚠️ TOML 的 inline table `{...}` **不许跨行**（数组可以跨行，它不行）——
-#    2026-10-08 写这份清单时踩到，护栏当场把「清单读不了」报成了「没有补丁」。
-#    下面每条都保持单行。
-# 1. 补丁的目标函数还在
-# 2. 内容行仍走官方投影函数（补丁包的正是它）
+#    2026-10-08 写这份清单时踩到。下面每条都保持单行。
 must_contain = [
-  { file = "packages/client/ui-chat/src/client/chat/MessageItem.tsx", text = "function UserStyleBubble(" },
-  { file = "packages/client/ui-chat/src/client/chat/MessageItem.tsx", text = "projectUserText(text, referenceLabels, skillNames" },
+  { file = "packages/client/ui-conversation/src/client/user-text/UserText.tsx", text = "export function UserText(" },
+  { file = "packages/client/ui-conversation/src/client/user-text/UserText.tsx", text = "renderSlot('conversation.user.text.node'" },
+  { file = "packages/client/ui-conversation/src/client/apply.ts", text = "key: 'text', priority: 100" },
+  { file = "packages/client/ui-conversation/src/client/user-text/UserText.tsx", text = "ellipsis ? css.ellipsis : css.root" },
 ]
-# 3. projectUserText 的「无装饰」分支仍返回单个 span
-#    —— 判定逻辑的全部依据：单元素且 children 即原文
-must_match = [
-  { file = "packages/client/ui-primitives/src/user-text.tsx", regex = "if \\(parts\\.length === 0\\) return <span className=\\{css\\.plainRun\\}>\\{text\\}</span>" },
-]
-# 4. 三个符号仍从各自的模块导出
 must_export = [
   { file = "packages/client/ui-primitives/src/index.ts", name = "MarkdownText" },
-  { file = "packages/client/ui-primitives/src/index.ts", name = "projectUserText" },
-  { file = "packages/client/ui-chat/src/client/markdown-labels.ts", name = "markdownLabels" },
 ]
 
 # ── 构建：源码变了才重建 ──────────────────────────────────────────
 #
-# ui-chat 是**动态 client 插件、不进 vite graph** ⇒ 只需 tsc + 重打包这一个包，
+# ui-conversation 是**动态 client 插件、不进 vite graph** ⇒ 只需 tsc + 重打包这一个包，
 # 不需要 `pnpm build:web`（那会把整个 web 重编，几分钟）。
 
 [build]
-artifact = "packages/client/ui-chat/lib/client.js"
+artifact = "packages/client/ui-conversation/lib/client.js"
+# ⚠️ 不经过 pnpm：检出的 packageManager 钉 11.28.5，而本机活跃 pnpm 是 11.7.0，
+#    corepack 会让 `pnpm exec` 直接报版本不符（2026-10-17 实测 rc=1）。
+#    直接调 node 二进制 = 与包管理器版本解耦。
 run = [
-  "pnpm exec tsc -b tsconfig.client.json",
-  "pnpm --filter @deepseek-ai/dsh-client-ui-chat run bundle",
+  "node ./node_modules/typescript/bin/tsc -b tsconfig.client.json",
+  "npm --prefix packages/client/ui-conversation run bundle",
 ]
 
 # ── 上游漂移时的处置提示（护栏报错会打出来）──────────────────────
 [on_drift]
 hint = """
-上游改了上面那 4 项之一 ⇒ 补丁要**人工重写**，不能自动重打：
-  1. 对照 `dsh-user-markdown.md` 的判定逻辑与边界，在当前版本源码里重新定位那 4 处
-  2. 改完用 `git -C 原始代码研究/<版本> diff -- <目标文件>` 生成新的 .patch，替换本目录里的旧件
-  3. 更新本 manifest 的 verify 断言与 target.patch 文件名（版本号进文件名）
-  4. 重建（`dsh-ui-patches.py --apply` 会做）并到浏览器实测一次
+上游改了上面 4 项之一 ⇒ 补丁要**人工重写**，不能自动重打：
+  1. 重读 packages/client/ui-conversation/src/client/user-text/UserText.tsx
+     与 apply.ts（节点槽的注册处），确认节点渲染的入口还叫什么
+  2. 在节点循环里给 node.id === 'text' 分支换掉渲染目标（当前是 MarkdownText）
+  3. 用 `git -C 原始代码研究/<版本> diff -- <目标文件>` 生成新 .patch，
+     更新本清单的 target 文件名与 verify 断言
+  4. 重建（`dsh-ui-patches.py --apply` 会做）并到浏览器实测一次：
+     发一条含 **粗体** 与 `code` 的消息，同时确认 @ 引用 chip 仍可点
 """

@@ -100,14 +100,14 @@ python3 tools/check-inode-sharing.py --isolate dsh-domus-0.2.0-rc.2 dsh-domus-0.
 > 于是 `./start-web.sh --stop` 只会报「找不到运行记录」——**停不掉任何东西**。
 > 停之前先 `ls _scratch/instances/` 确认；空的话就按上表走 Ctrl+C。
 
-### ★ 推荐入口：`tools/cutover-0.2.0.sh`（独立脚本，一条命令全做完）
+### ★ 推荐入口：`tools/cutover.sh`（独立脚本，一条命令全做完）
 
 上面那五步是**手工**序列。日常更该用独立脚本：
 
 ```bash
 cd ~/deepseek-harness
-./tools/cutover-0.2.0.sh --dry-run     # 先看：谁在线、要搬什么（只读）
-./tools/cutover-0.2.0.sh               # 走全套：停 → 搬 → 复核 → 报出启动命令
+./tools/cutover.sh --dry-run --to-ver v0.2.1-rc.2   # 先看：谁在线、要搬什么（只读）
+./tools/cutover.sh --to-ver v0.2.1-rc.2             # 走全套：停 → 搬 → 复核 → 报出启动与转正命令
 ```
 
 它做的事：① 侦察在线 host → ② 打印差异清单 → ③ **分级停实例**
@@ -150,7 +150,7 @@ tool/后台 job 进程树逐个 kill**。它 `SID=PGID=自己` 也没用——�
 （`DSH_HOME` 非空即退出 4）。
 
 > `--wait-for-offline` 仍保留在 `port-conversations.py` 里，但**只在你自己的、
-> 与 DSH 无关的终端里**才安全。默认路径请用 `cutover-0.2.0.sh`。
+> 与 DSH 无关的终端里**才安全。默认路径请用 `cutover.sh --to-ver <版本>`（**`--to-ver` 必填**，脚本刻意不设默认值）。
 
 ### 另一条教训：「查不出来」不许当成「都没在线」
 

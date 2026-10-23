@@ -84,9 +84,11 @@ must_contain = [
 # artifact 只能写一个：三个包由**同一次**运行一起重建，取主修包当哨兵即可。
 [build]
 artifact = "packages/sandbox/sandbox-policy/lib/index.js"
+# ⚠️ 不经过 npx/pnpm：npx 会走 corepack 垫片并可能触发版本检查；
+#    直接调 node 二进制 = 与包管理器版本解耦。
 run = [
-  "npx tsc -b tsconfig.host.json",
-  "npx tsdown --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-sandbox --filter @deepseek-ai/dsh-sandbox-local --filter @deepseek-ai/dsh-sandbox-policy",
+  "node ./node_modules/typescript/bin/tsc -b tsconfig.host.json",
+  "node ./node_modules/tsdown/dist/run.mjs --config-loader native --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-sandbox --filter @deepseek-ai/dsh-sandbox-local --filter @deepseek-ai/dsh-sandbox-policy",
 ]
 
 # ── 上游漂移时的处置提示（护栏报错会打出来）──────────────────────────

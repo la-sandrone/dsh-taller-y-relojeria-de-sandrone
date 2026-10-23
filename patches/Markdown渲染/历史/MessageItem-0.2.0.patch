@@ -1,0 +1,80 @@
+diff --git a/packages/client/ui-chat/src/client/chat/MessageItem.tsx b/packages/client/ui-chat/src/client/chat/MessageItem.tsx
+index 9005150..dc83964 100644
+--- a/packages/client/ui-chat/src/client/chat/MessageItem.tsx
++++ b/packages/client/ui-chat/src/client/chat/MessageItem.tsx
+@@ -1,13 +1,27 @@
+-import { Fragment, memo, useEffect, useMemo, useState } from 'react'
++/* ─────────────────────────────────────────────────────────────────────────
++ * 本地补丁：dsh-user-markdown —— 让用户/steering 气泡按 Markdown 渲染
++ *
++ * 性质：改官方源码（非插件）。官方 2026-07-23 的决策文档把「用户输入是否格式化」
++ *      定义为**产品选择**、默认按字面渲染；本补丁即本地做出的那次选择。
++ * 上游漂移：0.2.0 相对 0.1.5，`projectUserText` 多了 `slashKind` 与 `references`
++ *      两个参数（本补丁已适配并**原样透传**，否则 `/` 引用与 skill chip 的点击会哑掉）。
++ * 重放：`补丁/Markdown渲染/MessageItem.tsx.patch`（`git apply`）
++ * 文档：`补丁/Markdown渲染/dsh-user-markdown.md`（边界 / 构建 / 回滚 / 升级核对清单）
++ * ⚠️ 升级基座后 `src/` 随新检出消失 —— 这是本补丁每个版本都要重做的原因。
++ *    开机护栏 `guard_ui_patches` 会检测并自动重放或明确报出漂移，见 start-web.py。
++ * ───────────────────────────────────────────────────────────────────────── */
++import { Fragment, isValidElement, memo, useEffect, useMemo, useState } from 'react'
+ import type { ReactNode } from 'react'
+ import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+ import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
+-import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
++import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, MarkdownText, projectUserText, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
++import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+ import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
+ import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
+ import { CompactionItem } from './CompactionItem.tsx'
+ import { ContextInjectionRow } from './ContextInjectionRow.tsx'
+ import { MessageIconActions } from './MessageIconActions.tsx'
++import { markdownLabels } from '../markdown-labels.ts'
+ import css from './MessageItem.module.css'
+ 
+ type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
+@@ -158,6 +172,36 @@ function TurnMaxTokensItem({ t }: {
+   )
+ }
+ 
++/**
++ * 本地补丁（dsh-user-markdown）的核心判定：无引用装饰时整条走 Markdown，否则原样返回。
++ *
++ * **不复刻官方正则**，而是问官方自己的返回值：
++ *   · 官方 `projectUserText` 无装饰时返回单个 `<span className={css.plainRun}>{text}</span>`
++ *     （见 `ui-primitives/src/user-text.tsx` 末尾的 `if (parts.length === 0) …`）
++ *   · 有装饰（`@文件` / 会话引用 / skill 名）时返回 Fragment（多片段）
++ * ⇒ 所以「是单元素 **且** children 就是原文」即「无装饰」。
++ *
++ * **安全失败方向**：官方若改实现（例如无装饰也返回 Fragment），判定失效 → 退回纯文本，
++ * 不会渲染坏。这是刻意选择的保守姿态。
++ *
++ * ⚠️ 参数**必须原样透传**（0.2.0 比 0.1.5 多了 `slashKind` 与 `references`）：
++ *    少传一个，`/` 引用与 skill chip 的点击就会哑掉。
++ */
++function projectUserContent(
++  text: string,
++  referenceLabels: readonly string[],
++  skillNames: readonly string[],
++  slashKind: 'skill' | 'command',
++  references: Pick<ChatNodeOwnerProps, 'openFile' | 'openSkill'> | undefined,
++  labels: MarkdownLabels,
++): ReactNode {
++  const projected = projectUserText(text, referenceLabels, skillNames, slashKind, references)
++  const undecorated = isValidElement(projected)
++    && (projected.props as { children?: unknown }).children === text
++  return undecorated ? <MarkdownText text={text} labels={labels} /> : projected
++}
++
++
+ /** Right-aligned bubble shared by user and steering rows. */
+ function UserStyleBubble({
+   content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [],
+@@ -219,7 +263,7 @@ function UserStyleBubble({
+           </div>
+         )}
+         {showBubble && <div className={css.bubble}>
+-          {projectUserText(text, referenceLabels, skillNames, 'skill', references)}
++          {projectUserContent(text, referenceLabels, skillNames, 'skill', references, markdownLabels(t))}
+           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
+         </div>}
+         {referenceLabels.length > 0 && (
