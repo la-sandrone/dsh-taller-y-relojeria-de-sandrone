@@ -3,13 +3,13 @@
 文件名: 用户笔记/检索/server_bge-超窗处理与分块加权平均.md
 摘要: 给 `server_bge.py` 加装超窗检测与三档策略。此前它对超长文本**静默截断**——
       调用方以为向量覆盖了全文，其实尾部被丢了，且无任何报错。
-依赖: `<MCP-目录>/memoria-del-hielo/server_bge.py`（与公开发布版同源）
+依赖: `<挂载d>:/DataServices/MCP/memoria-del-hielo/server_bge.py`（与公开发布版同源）
 
 ---
 
 ## 一、起因：原本没有任何检查
 
-2026-10-25 用 Everything 找齐 **5 个 `server_bge` 源文件**（主文件、`<公开发布区>`
+2026-10-25 用 Everything 找齐 **5 个 `server_bge` 源文件**（主文件、`<发布项目目录>`
 副本、3 个 `.bak`），逐个搜 `truncat` / `clip` / `chunk` —— **一处都没有**。
 所有版本都只声明 `max_length: 8192`，实际由模型在编码时静默截断。
 

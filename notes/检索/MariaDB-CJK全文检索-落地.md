@@ -4,7 +4,7 @@
 摘要: 在 `melquiades_medicamento` 上把 `dsh_message` 做成可搜中文单字的全文检索。
       记录两个实测事实（`min_token_size` 按字符计、`SET GLOBAL` 静默忽略）、
       方案依据（Lucene CJKBigramFilter）、以及已知限制。
-依赖: `<MariaDB-数据目录>\my.ini`（`innodb_ft_min_token_size=1`）
+依赖: `<E盘>:\DataServices\MariaDB\my.ini`（`innodb_ft_min_token_size=1`）
       `dsh_message.body_tokenized` + `ft_body_tokenized`
 
 ---
@@ -63,7 +63,7 @@ bigram 与分词效果相当甚至更好，且**不依赖词典**——词典遇
 
 | 位置 | 改动 | 备注 |
 |---|---|---|
-| `<MariaDB-数据目录>\my.ini` | 加 `innodb_ft_min_token_size = 1` | 备份 `backups/my.ini.bak-20261024-234939` |
+| `<E盘>:\DataServices\MariaDB\my.ini` | 加 `innodb_ft_min_token_size = 1` | 备份 `backups/my.ini.bak-20261024-234939` |
 | `MariaDB12.3.2` 服务 | 重启（stop 3s / start 2s） | 消费方全是短连接，无影响 |
 | `dsh_message` | 加 `body_tokenized MEDIUMTEXT NULL` | `ALGORITHM=INSTANT`，64 ms |
 | `dsh_message` | 加 `FULLTEXT INDEX ft_body_tokenized` | `ALGORITHM=INPLACE`，86 s |
