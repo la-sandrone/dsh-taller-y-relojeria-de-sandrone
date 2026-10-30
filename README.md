@@ -4,6 +4,8 @@
 
 对 [DeepSeek Harness](https://github.com/deepseek-ai)（DSH）的**本地爆改合集**：源码补丁、界面补丁包、皮肤、字体方案、启动器、**System Prompt 设计**，以及把这些东西改出来时踩过的坑和判据。
 
+> **TL;DR** —— 对 DSH 的本地爆改合集：三个源码补丁（用户消息 Markdown 渲染、空回复兜底、沙盒 scratch 跨调用存活）、一个 UI 补丁包、一个皮肤、一个启动器，外加脱敏实操笔记与渲染基准报告。补丁带 `manifest.toml` 版本断言——版本对不上就拒绝打补丁并报出漂移点，不静默打歪。
+
 
 > 标题是Letanías lauretanas里六个真称号的串联，你去核对原剧情我反正觉得差不多对（草生）
 >
