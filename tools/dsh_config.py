@@ -31,7 +31,7 @@ import re
 import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -114,6 +114,12 @@ class LauncherConfig:
     main_port: int
     try_port_from: int
     archive_ttl_days: int
+    # 逐条「代理覆盖」：键 = 组件自己读的环境变量名，值 = 代理 URL。
+    # 只影响列在表里的组件；**不要**拿它去设全局 HTTPS_PROXY ——
+    # MCP 服务器与 LLM 调用会一起绕路，既有链路会乱。
+    # 为什么叫 overrides 而不是 relay_proxy：以后还会有别的「网络脆弱分子」
+    #   需要单独走代理，名字得描述行为（覆盖谁），而不是描述这一次的原因。
+    proxy_overrides: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -171,6 +177,22 @@ def _require(data: dict, key: str, kind: type, where: str):
     return value
 
 
+
+def _proxy_overrides(data: dict, where: str) -> dict[str, str]:
+    """读 [proxy_overrides]：键=环境变量名，值=代理 URL。表可缺省。"""
+    raw = data.get("proxy_overrides", {})
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where}: [proxy_overrides] 必须是一个表（键=环境变量名，值=代理 URL）")
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ConfigError(f"{where}: proxy_overrides.{key} 的键与值都必须是字符串")
+        if not key:
+            raise ConfigError(f"{where}: proxy_overrides 里有空的键")
+        out[key] = value
+    return out
+
+
 def load_config(harness: Path | None = None) -> LauncherConfig:
     """读 当前配置.toml。任何缺失或类型错误都 fail-loud（不猜默认值）。"""
     root = harness if harness is not None else harness_dir()
@@ -183,6 +205,7 @@ def load_config(harness: Path | None = None) -> LauncherConfig:
         main_port=_require(data, "main_port", int, where),
         try_port_from=_require(data, "try_port_from", int, where),
         archive_ttl_days=_require(data, "archive_ttl_days", int, where),
+        proxy_overrides=_proxy_overrides(data, where),
     )
 
 

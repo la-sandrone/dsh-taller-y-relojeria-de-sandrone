@@ -102,7 +102,27 @@ BIND_HOST = "127.0.0.1"
 #   回落 `启动器配置和日志/密钥.env`（mode 600、明文、**进 git** —— 本仓库是纯本地
 #   安全网、永不公开；凭据要跟着备份走，否则从 git 恢复一个工作区之后开不了机）。
 SECRETS_FILE_NAME = "密钥.env"
-SECRET_NAMES = ("DEEPSEEK_API_KEY", "DEEPSEEK_API_AMICI_MEI")
+# 2026-11-04 二次变更：SECRET_NAMES 清空。
+#   · DEEPSEEK_API_KEY —— 见下方历史说明，本来就没被读过。
+#   · DEEPSEEK_API_AMICI_MEI —— 朋友那条改为设置面板填写（credentials store 的
+#     llm-pi-ai.amici-mei record），不再走环境变量。
+#   ⇒ 启动器不再要求任何 LLM 凭据；凭据全部落在 <DSH_HOME>/.credentials.yaml。
+#   ⚠️ 空元组 = load_secrets 的 for 循环一次都不跑 = **完全不读环境变量**，
+#   所以 export 也不会被注入。要临时覆盖，二选一：
+#     ① 从设置面板写 credentials store（推荐）
+#     ② 把变量名加回本元组，再 export（代码级改动）
+#
+# 历史说明（保留）：
+# DEEPSEEK_API_KEY 于 2026-11-04 移出必需项：DS 账户登录已接管官方 provider。
+#   依据 packages/llm/llm-deepseek-api-key/src/index.ts 的 resolveApiKey：
+#     有 credentials 服务时**只查 store，不回退 env**（store 里没有就抛
+#     MISSING_CREDENTIAL）。本机 .credentials.yaml 里有
+#     `deepseek-account-platform/default.token`（已登录）但**没有** DEEPSEEK_API_KEY
+#     的 record，所以那个环境变量从来没人读 —— 强制它存在只是白卡启动。
+#   同理 llm-deepseek-api-key 那条 provider 现在恒空转（discoverModels 吞掉
+#   MISSING_CREDENTIAL 返回空列表），实际服役的是 llm-deepseek-account。
+# 朋友的那条必须留：llm-pi-ai 的 amici-mei 走 apiKeyEnv: DEEPSEEK_API_AMICI_MEI。
+SECRET_NAMES: tuple[str, ...] = ()
 # 路径自检用的模式：harness 根下、且首段是 dsh-domus 的绝对路径。
 # 与 bash 原式的 `/deepseek-harness/dsh-domus(-[0-9]|/)` 同形（要求 `-数字` 或 `/` 跟随）。
 _LEAK_TAIL = r"/dsh-domus(?:-[0-9][A-Za-z0-9._-]*|/)"
@@ -1626,6 +1646,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = dcfg.load_config()
+        # 逐条「代理覆盖」：只注入 [proxy_overrides] 里点名的环境变量。
+        # **绝不**在这里设全局 HTTPS_PROXY —— MCP 服务器与 LLM 调用会一起绕路，
+        # 已知会打乱既有链路。要加新的脆弱链路，就往配置表里加一行。
+        for _name, _url in config.proxy_overrides.items():
+            os.environ[_name] = _url
+        if config.proxy_overrides:
+            say("代理覆盖: " + ", ".join(
+                f"{n}={u}" for n, u in config.proxy_overrides.items()))
         is_try = bool(args.try_version)
         paths = dcfg.derive(config, args.try_version if is_try else None)
         info = dcfg.load_version_info(paths.version)
