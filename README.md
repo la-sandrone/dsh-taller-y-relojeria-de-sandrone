@@ -38,12 +38,13 @@
 
 ---
 
-## 三个源码补丁
+## 四个源码补丁（其中一个已退役）
 
 | 补丁 | 一句话 | 文档 |
 |---|---|---|
 | **Markdown 渲染** | 让**用户消息**按 Markdown 渲染（这是上游的产品选择，本地选了另一条）；含 `UserText-0.2.1.patch` 与 **`UserText-0.2.2.patch`** 两份基线 | [`patches/Markdown渲染/`](patches/Markdown渲染/) |
 | **空回复兜底** | 让「只吐思考链、`finish=stop`」的退化响应变成**可重试的 `EMPTY_RESPONSE`**，而不是一条静默落盘、界面上什么都不显示的空白回复 | [`patches/空回复兜底/dsh-empty-response-content.md`](patches/空回复兜底/dsh-empty-response-content.md) |
+| **defer 全延期兜底** | 会话基线是旧工具面、而中途工具面变了（PTC 打开）时，`projectToolUpdates()` 会产出**全延期**的声明集 ⇒ 服务端 400 ⇒ 该会话此后每轮都失败。本补丁在投影后兜一层：全延期就至少留一个可加载声明（优先当前活跃工具） | [`patches/defer全延期兜底/`](patches/defer全延期兜底/) |
 | ~~**沙盒 scratch 落点**~~ **已退役** | 让 `workspace-write` 沙盒拥有一个**跨调用存活**的临时目录 —— bwrap 在 `--tmpfs /tmp` 之后把宿主的一个子目录 bind 回去（其余 `/tmp` 保持每次全新）；顺带解决「沙盒里 `mkdir /tmp/x` 下次调用就没了」 | [`patches/sandbox-scratch/`](patches/sandbox-scratch/) |
 
 后者的排查过程值得单看：一场真实会话 153 轮里 **13 轮**收尾只产出 reasoning 块、正文一个 token 都没生成，而**两层空响应守卫都在问错的问题**（数的是「有没有开过块」而不是「有没有可交付内容」）——其中一处还有一条**把错误行为写成契约的测试**（`keeps a thinking-only stop successful`）。文档里有完整的取证链。

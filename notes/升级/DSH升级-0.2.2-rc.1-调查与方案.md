@@ -804,3 +804,130 @@ options.toolHistory = undefined                       // 关掉中途新增/延�
 2. **语法检查必须放行 `!!js`**：`yaml.safe_load` 一定失败，要用多构造器兜住 `tag:yaml.org,2002:js`；
    而真正权威的解析器是项目自带的 `tools/check_patch_layers.py`（它跑通才算能启动）。
 3. **那份文件里全是手改**：只做**增量插入**，改完用 `diff | grep -c '^<'` 证明**删除行数为 0**（本次 5 处插入、+50 行、0 删除）。
+
+### 11.14 失败现场两个会话，与「fork 的 createdAt 骗人」（2026-11-05）
+
+**原始失败现场**：`session-f0435754-4d36-4831-a274-2234f2bc758d`（「整理素材（2）」），
+创建 2026-10-20、preset `coding`、cwd `<D盘>:\User Data\Documents\简历`，11043 事件 / 24.4 MB。
+
+```
+turn 432 正常 completed   ← 此前 432 轮全好，工具面始终 131/132 原生
+turn 433 / step 1         ← INVALID_REQUEST 400
+  tools: at least one tool must have defer_loading=false. All tools cannot be deferred.
+  request_id: 044bcbc1-22bb-4c1b-b17e-73129d3f7dab
+```
+
+对照：`0.2.1-rc.2` home 里同名会话的副本停在同一位置且**只有 turn 432**（11027 事件），
+`0.2.2-rc.1` 这份多出 turn 433 与这次 400 ⇒ **是「在 0.2.2 上重开这个老会话」才炸的**。
+注意：**失败的请求没有留下 `request/header`**（最后一条 header 是 seq 10936，reason `resume`，132 工具），
+所以那一轮的真实活跃工具面只能靠推断，不能从日志直接读出。
+
+**实验用失败现场（用户已备好）**：`session-fb560d75-d88a-4164-8df8-95241cf7b92e`
+（「整理素材（2）（失败现场备份1）」）
+
+| 字段 | 值 | 含义 |
+|---|---|---|
+| `isSeeded` | **true** | fork：结算后的种子历史（继承 11031 条事件） |
+| `createdAt` | 2026-11-05T16:14:41+08 | **分叉时刻，不是历史年龄** |
+| 未结束的 turn | 0 | 末事件是 `session/end-seed` 与两次 `session/title` |
+| 继承来的 header | 22 条（`initial`/`series`/`resume`/`change` 俱全） | 工具面在历史里反复重开过 series |
+
+⇒ **「干净环境发一下就触发」基本成立**：第一条 live 消息会拿继承来的 132 工具史去投影，
+只要当前活跃面与它不同，就是全延期 ⇒ 400。
+
+**但这带出一个判据错误（我先前写的那条在这里失效）**：
+
+> 我原本用 `createdAt < 2026-11-05T00:00+08` 判「老会话」。
+> **fork 的 createdAt 是分叉时刻** —— 这个备份会话 createdAt 就在当天 16:14，
+> 按日期判它「不老」⇒ 兜底不触发。**日期不能代表历史年龄。**
+
+改法（已落地）：判据加上 `header.isSeeded === true` —— 带种子历史的分叉会话一律算「老」。
+
+**仍未定的一件事**：`f0435754` 那轮，插件到底有没有跑。已给插件加诊断日志
+（每次 `llm/stream` 写一行 JSON 到 `<home>/logs/toolface-guard.log`，fail-open、1 MB 截断），
+**重启后发一条消息即可判定**：
+
+| 观察 | 结论 |
+|---|---|
+| 完全没有 `skip`/`restore` 行 | 插件没被调用 ⇒ 查 bundle roster 与模块解析 |
+| 有 `skip` 行且 `seeded:true`/`createdAt` 为 null | 判据仍落空 ⇒ 改判据 |
+| 有 `restore` 行但请求仍 400 | 投影发生在改写之外 ⇒ 换缝（`resolvedOptions` 链路） |
+
+### 11.15 结论：`llm/stream` 这条路走不通 —— 请求对象是**冻结**的（2026-11-05）
+
+**日志证据**（`dsh-domus-0.2.2-rc.1/logs/toolface-guard.log`，7 行，全部同一形态）：
+
+```json
+{"sid":"…fb560d75…","k":"restore","flipped":false,"faceSize":0,"changed":false,
+ "before":{"tools":1,"base":1,"adds":1},"createdAt":1793866481510,"seeded":true}
+```
+
+- `seeded:true` ⇒ 新加的 **isSeeded 判据确实生效**（按日期它会被判成「不老」，因为 fork 的 createdAt 是分叉时刻）；
+- **但 `changed:false`、`faceSize:0` ⇒ `restoreFace()` 一行都没改** —— 它抛了异常，被我的 fail-open 咽掉；
+- 而 `base:1` / `tools:1` ⇒ 该请求本来就只有 1 个工具、基线也是 1 ⇒ **本来就不会全延期**。
+
+**根因（源码级，不是猜）**：
+
+```ts
+// packages/core/agent-loop/src/agent.ts:733-741
+return markAgentLoopRequest(Object.freeze({
+  ...header.config, messages: boundaryMessages,
+  toolHistory: session.toolHistory(),   // ← 且 toolHistory 自身是 deepFreeze 过的
+  ...header.tools !== undefined ? { tools: header.tools } : {},
+  sessionId: this.session.id, signal,
+}))
+```
+
+⇒ **`options` 顶层冻结、`toolHistory` 深度冻结**；ESM 是严格模式，`options.toolHistory = undefined` 直接抛 TypeError。
+**任何「在 `llm/stream` 里改请求」的修法，本质上都不可能生效** —— 社区那个占位符插件同理（它靠重派发，而重派发已证明会抛 `next() called multiple times`）。
+
+**之前两次「ok」要重新归因**：`272f6bba` 与 `fb560d75` 都是**请求本来就合法**（基线 = 活跃 = 1 个 `run_code`），
+不是插件救回来的。这条必须写清楚，否则会留下一个「看起来修好了」的假象。
+
+**400 的真实机制（从 `buildRequest` 读出，`agent.ts:673-700`）**：
+
+1. 当前 header 与基线不同 ⇒ 追加 `request/header {reason:'change'}` —— **`change` 不会重开 series**；
+2. 差的工具写进 `developer/message` 的 `tool-addition` / `tool-removal`；
+3. 投影：removal 把基线里的 131 个删掉，剩下的 `run_code` 是 addition ⇒ 标 `deferLoading`；
+4. ⇒ 声明集只剩延期项 ⇒ 400。**重开 series 就能解**（`reason:'series'`/`startsSeries` 会把基线重置为当前 header）。
+
+**因此出路只剩三条**（都要用户定）：
+
+| 方案 | 做法 | 代价 |
+|---|---|---|
+| A. 执行器固定 native | 关掉 `tool-executor-ptc`，全用原生面 | 新会话工具多、token 高；但**面不再翻转**，老会话随便续 |
+| B. 执行器固定 PTC | 现状 | 所有 **PTC 之前**的老会话一续就 400（除非换自定义端点） |
+| C. 上游修投影 | 往 `#11475` 补这次的精确触发链 | 等发版 |
+
+**插件该何去何从**：现状是「诊断有用、修复无效」。要么缩成纯诊断（保留 `logs/toolface-guard.log`），
+要么按 A/B 的选择改写成**执行器层**的东西（那是另一个层级的改动）。**不能留着冒充「已经修好了」。**
+
+### 11.16 结论：源码级补丁生效（2026-11-05 收尾）
+
+**验证会话**：`session-9b7fdf6d-55d3-4592-bc61-0317edc96ec6`（「整理素材（2）（失败现场备份3） (2)」）
+
+```
+seeded: true · 11079 事件 · 末条 request/header = seq 11053, reason=resume, tools=1
+error 回合数: 0        ← 与三次失败现场（同一条 header 形态）唯一的不同是：打了补丁
+```
+
+即：**同样的「基线 132 / 当前面 1」形状，这次请求合法了**。补丁位置与内容见
+`补丁/defer全延期兜底/defer全延期兜底.md`（含四步机制、三份实测 request_id、验证输出）。
+
+**为什么最终是源码补丁而不是插件** —— 三条插件路线全部撞墙，且都能说清原因：
+
+| 路线 | 死因 |
+|---|---|
+| `llm/stream` 里改 options | `Object.freeze`（`agent.ts:733-741`），严格模式赋值抛异常，被我自己的 fail-open 咽掉 |
+| 被拒后重派发 | waterfall `next()` 只能调一次 ⇒ `next() called multiple times` |
+| `agent/pre-step` 追 `request/header{reason:'series'}` | `ctx.tools.schemas(agent)` 给的是**注册表**（158），不是执行器呈现面（1）⇒ 反而刷出 158 条 removal，把正常会话也污染了 |
+
+**教训（写给下一次）**：
+
+1. **先确认能改**，再设计改法。`Object.freeze` 一读就知道，我却先写了三轮修复；
+2. **API 的语义要靠调用点确认**：`schemas(scope)` 名字像"当前面"，实际是注册表 —— 看 `buildRequest` 收到的是 `assembly.tools` 才准；
+3. **诊断日志先于修复**：`logs/toolface-guard.log` 那 7 行直接把「没生效」摊开，比再改一版有用得多；
+4. **别把"看起来好了"当验收**：`272f6bba` / `fb560d75` 两次「ok」都是请求本来合法，与插件无关。
+
+**当前状态**：插件已降为 `repairMode: observe`（只写诊断、不动手）；真正的修复在检出源码里，
+由 `补丁/defer全延期兜底/manifest.toml` 在每次开机核对/重放。插件是否正式退役待定。

@@ -1,0 +1,72 @@
+# 补丁清单 —— defer 全延期兜底（声明集全延期时至少留一个可加载项）
+#
+# 这份文件是**开机护栏 guard_ui_patches 的输入**：`tools/dsh-ui-patches.py` 按
+# `补丁/*/manifest.toml` 逐个处理 —— 与 `Markdown渲染/`、`空回复兜底/` 同属一份存档。
+#
+# ── 为什么要有它（根因，含实测证据）────────────────────────────────
+#
+# DeepSeek 的消息接口硬要求：tools 数组里**至少有一个 `defer_loading=false`**。
+# 而 `projectToolUpdates()`（`packages/llm/llm/src/content.ts`）可以产出**全延期**的声明集：
+#   1. 会话基线（`history.tools`）是旧工具面（例如 132 个原生工具）；
+#   2. 工具面在会话中途变了（PTC 打开 ⇒ 只剩 `run_code`）；
+#   3. loop 追加 `request/header{reason:'change'}` + `developer/message` 的 tool-removal/addition；
+#   4. 投影：removal 把基线删光，剩下的 `run_code` 是 addition ⇒ 被标 `deferLoading: true`；
+#   5. ⇒ 整份 tools 全延期 ⇒ 400 `All tools cannot be deferred` ⇒ **该会话此后每轮都失败**。
+#
+# 实测现场（2026-11-05）：
+#   · 「整理素材（2）」`session-f0435754-…` turn 433 / request_id 044bcbc1-…
+#   · 「整理素材（2）（失败现场备份3）」`session-654d7a73-…` turn 433 / request_id b54bce8…
+#   两者都是旧会话在 0.2.2 上重开时，工具面从 132 掉到 1。
+#
+# 为什么不能靠插件修（都已实测失效，别再试）：
+#   · `llm/stream` 里改 options：那份 options 是 `Object.freeze`（agent.ts:733-741），赋值抛异常；
+#   · 重派发：waterfall 的 `next()` 只能调一次，第二次抛 `next() called multiple times`；
+#   · 在 `agent/pre-step` 追一条 `request/header{reason:'series'}`：`ctx.tools.schemas(agent)`
+#     给的是**注册表**（155~158 个），而请求面是执行器呈现的 1 个 ⇒ 反而制造 158 条 removal。
+#
+# ⚠️ 这是**兜底**，不是修复上游语义：它让请求合法、会话可用，但不改变「投影会全延期」这个事实。
+#    上游若自行修好（例如投影后强制保留一个 immediate 声明），本补丁应当删除。
+
+[patch]
+name = "defer 全延期兜底（声明集全延期时至少留一个可加载项）"
+slug = "defer全延期兜底"
+doc = "defer全延期兜底.md"
+why = "会话基线是旧工具面、而中途工具面变化时，projectToolUpdates 会产出全延期声明集 ⇒ 服务端 400 ⇒ 该会话永久不可用"
+
+# 一个 target = 一份 patch = `git apply` 一次（原子）。
+[[target]]
+file = "packages/llm/llm/src/content.ts"
+patch = "defer-guard-0.2.2.patch"
+applied_marker = "[dsh-local-patch: defer-guard]"
+
+# ── 升级核对：只断言补丁不改变的上游结构 ──────────────────────────
+must_contain = [
+  { file = "packages/llm/llm/src/content.ts", text = "export function projectToolUpdates(" },
+  { file = "packages/llm/llm/src/content.ts", text = "const declarations = toolDeclarations(tools, toolUpdate, history)" },
+  { file = "packages/llm/llm/src/content.ts", text = "const updateIds = new Set(history.updates.map(update => update.messageId))" },
+  { file = "packages/llm/llm/src/content.ts", text = "function toolDeclarations(" },
+]
+must_match = [
+  { file = "packages/llm/llm/src/content.ts", regex = "deferLoading: true" },
+]
+
+# ── 构建：补丁改的是 src，运行跑的是 lib/index.js ⇒ 必须重建 ────────
+# 只重建 llm 这一个包（tsdown --filter 精确匹配包名）。
+[build]
+artifact = "packages/llm/llm/lib/index.js"
+run = [
+  "node ./node_modules/typescript/bin/tsc -b tsconfig.host.json",
+  "node ./node_modules/tsdown/dist/run.mjs --config-loader native --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-llm",
+]
+
+[on_drift]
+hint = """
+上游改了 projectToolUpdates / toolDeclarations 的这几处 ⇒ 不要盲目重打：
+  1. 先看上游是不是**已经自己兜住**了（例如投影末尾强制保留一个 immediate 声明）——
+     若是，本补丁应当删除：删掉 `补丁/defer全延期兜底/` 整个目录即可；
+  2. 否则在当前版本源码里重新定位，改好后
+     `git -C 原始代码研究/<版本> diff -- packages/llm/llm/src/content.ts > defer-guard-<版本>.patch`,
+     再把新文件名写回 [[target]].patch；
+  3. 重打后回读三件事：`lib/index.js` 里能 grep 到 `dsh-local-patch: defer-guard`、
+     用真机重开一个仍带旧工具面的会话能跑、以及新会话不受影响。
+"""

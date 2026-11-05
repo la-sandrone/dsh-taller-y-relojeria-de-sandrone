@@ -1163,9 +1163,12 @@ def guard_profile_links(paths: dcfg.Paths, record_dir: Path, python: str) -> Non
         那是停机卡要对付的最坏情形）。护栏自己是离线的，拒启动时给出的修复
         命令不依赖 DSH 运行 —— 这一点是「敢拦」的前提。
     """
+    # `--fix` 让「本 profile 的 file: 本地包缺符号链接」当场自愈（无损：只是建链接）。
+    # 2026-11-05 实证：链接被收走后，护栏只报 WARN、放行开机，然后在 bundle 解析处炸
+    # （`cannot resolve profile bundle "dsh-old-session-toolface-guard"`），排查成本远高于自愈。
     rc = run_guard("check_profile_links",
                    [python, str(paths.harness / "tools" / "check-profile-links.py"),
-                    "--home", str(paths.home_dir), "--show", "5"], record_dir)
+                    "--home", str(paths.home_dir), "--show", "5", "--fix"], record_dir)
     if rc == 0:
         return
     if rc == 1:

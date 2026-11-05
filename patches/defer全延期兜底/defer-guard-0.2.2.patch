@@ -1,0 +1,25 @@
+diff --git a/packages/llm/llm/src/content.ts b/packages/llm/llm/src/content.ts
+index cecbfba9..92434dfe 100644
+--- a/packages/llm/llm/src/content.ts
++++ b/packages/llm/llm/src/content.ts
+@@ -447,6 +447,20 @@ export function projectToolUpdates(
+   }
+ 
+   const declarations = toolDeclarations(tools, toolUpdate, history)
++  // [dsh-local-patch: defer-guard] 服务端拒绝「全部延期」的声明集
++  // （`at least one tool must have defer_loading=false`）。工具面在会话中途变化时这是可达到的：
++  // removal 把基线删光，活下来的那个工具是 deferred addition ⇒ 整份声明集全延期 ⇒ 会话永久 400。
++  // 这里兜住：若全部延期，至少留一个可加载声明（优先当前活跃工具）。
++  if (declarations.size > 0
++    && [...declarations.values()].every(declaration => declaration.deferLoading === true)) {
++    const loadableNames = new Set((tools ?? []).map(tool => tool.name))
++    const loadable = [...declarations.values()].find(declaration => loadableNames.has(declaration.name))
++      ?? [...declarations.values()][0]
++    if (loadable !== undefined) {
++      const { deferLoading: _deferred, ...immediate } = loadable
++      declarations.set(loadable.name, immediate)
++    }
++  }
+   const updateIds = new Set(history.updates.map(update => update.messageId))
+   // Deferred baseline tools still need their first addition to become available.
+   const offered = new Set(history.tools.filter(tool => !tool.deferLoading).map(tool => tool.name))

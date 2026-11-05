@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -138,6 +139,24 @@ def print_group(title: str, items: list[str], marker: str, show: int) -> None:
 
 
 # ── ① 硬链接一致性 ───────────────────────────────────────────────
+def local_file_deps(profile: Path) -> set[str]:
+    """profile 的 dependencies 里声明为 `file:packages/<name>` 的本地包名。
+
+    **为什么要单独认这一类**：普通的 npm 依赖没装是「声明过期」，WARN 即可；
+    但 `file:packages/<name>` 是**我们自己挂上去的**，它缺失时 dsh 会直接起不来
+    （`cannot resolve profile bundle "<name>"`），所以必须按 FAIL 处理。
+    2026-11-05 实证：`dsh-old-session-toolface-guard` 的链接被收走，护栏只报 WARN、
+    放行开机，然后在 bundle 解析处炸，报错还在几十行之后 —— 定位成本远高于当场拦下。
+    """
+    try:
+        data = json.loads((profile / 'package.json').read_text(encoding='utf-8'))
+    except Exception:
+        return set()
+    deps = data.get('dependencies') or {}
+    return {name for name, spec in deps.items()
+            if isinstance(spec, str) and spec.startswith('file:packages/')}
+
+
 def check_hardlinks(profile: Path, rep: Report, fix: bool) -> None:
     pkgs_dir = profile / "packages"
     nm_dir = profile / "node_modules"
@@ -146,10 +165,27 @@ def check_hardlinks(profile: Path, rep: Report, fix: bool) -> None:
         return
     print(f"\n── {profile.name}：硬链接一致性（packages/ ⇄ node_modules/）")
 
+    local_names = local_file_deps(profile)
     for pkg in sorted(p for p in pkgs_dir.iterdir() if p.is_dir()):
         dst_root = nm_dir / pkg.name
         if not dst_root.exists():
-            rep.warn_(f"{pkg.name}：node_modules 里没有（既没装也没挂载，声明可能已过期）")
+            if pkg.name in local_names:
+                # 本地包缺链接 = dsh 起不来。这是**可以无损自愈**的（建一条符号链接），
+                # 所以 --fix 时直接补上；不带 --fix 才报 FAIL 交给人。
+                link = f'../packages/{pkg.name}'
+                if fix:
+                    try:
+                        os.symlink(link, dst_root)
+                        rep.repaired.append(f'{pkg.name}：补上符号链接 → {link}')
+                        continue
+                    except OSError as exc:
+                        rep.fail_(f'{pkg.name}：链接建不出来（{exc}）—— dsh 会因解析不到 bundle 而起不来')
+                        continue
+                rep.fail_(f"{pkg.name}：node_modules 里没有，但它是本 profile 的 `file:packages/` 本地包"
+                          f" —— dsh 会因为解析不到 bundle 而起不来。"
+                          f"修：ln -sfn ../packages/{pkg.name} node_modules/{pkg.name}")
+            else:
+                rep.warn_(f"{pkg.name}：node_modules 里没有（既没装也没挂载，声明可能已过期）")
             continue
         for rel in iter_package_files(pkg):
             src, dst = pkg / rel, dst_root / rel

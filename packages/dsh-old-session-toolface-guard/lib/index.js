@@ -17,6 +17,7 @@
 //  不补假占位工具（pi-ai 的 DeferredToolPlaceholder 只让请求合法，模型拿不到真工具），
 //  而是把当前活跃的那一个（默认 run_code）写回历史基线：基线 ∩ 活跃 ≠ ∅ ⇒ 投影自然合法。
 
+import fs from 'node:fs'
 import z from '@deepseek-ai/schemastery'
 
 export const name = 'old-session-toolface-guard'
@@ -32,7 +33,7 @@ export const Config = z.object({
     .description('判据①是否生效：老会话即使预测没命中，也无条件补一次基线。补的是真实活跃工具，代价是一条声明。'),
   dryRun: z.boolean().default(false)
     .description('只判定不修（排查用）。'),
-  repairMode: z.union(['restore', 'reset', 'append']).default('restore')
+  repairMode: z.union(['observe', 'series', 'restore', 'reset', 'append']).default('observe')
     .description('restore = 还原翻面前那张面（旧基线 ∪ 当前活跃）并关掉 tool update 机制（老人老办法，默认）；reset = 基线重设为当前活跃工具（新人新办法）；append = 只补一条进旧基线。'),
 })
 
@@ -185,35 +186,104 @@ function resetBaseline(options) {
  * @param ctx - 插件上下文
  * @param sessionId - GenerateOptions.sessionId
  */
-function sessionCreatedAt(ctx, sessionId) {
+function sessionInfo(ctx, sessionId) {
   try {
-    if (sessionId === undefined) return undefined
+    if (sessionId === undefined) return {}
     const sessions = ctx.get('sessions')
-    if (sessions === undefined || typeof sessions.get !== 'function') return undefined
+    if (sessions === undefined || typeof sessions.get !== 'function') return {}
     const session = sessions.get(sessionId)
-    if (session === undefined || session === null) return undefined
-    const header = session.header ?? (session.which && session.which.header) ?? session.meta
-    const at = header && header.createdAt
-    return typeof at === 'number' ? at : undefined
+    if (session === undefined || session === null) return {}
+    const header = session.header ?? (session.which && session.which.header) ?? session.meta ?? {}
+    return {
+      createdAt: typeof header.createdAt === 'number' ? header.createdAt : undefined,
+      // fork/seed：**带继承历史的分叉会话**。它的 createdAt 是「分叉时刻」（可能就在今天），
+      // 但工具史是老的 ⇒ 只按 createdAt 判「老会话」会漏掉它（2026-11-05 实证：
+      // 「整理素材（2）（失败现场备份1）」isSeeded=true、createdAt 当天，继承 11031 条事件）。
+      isSeeded: header.isSeeded === true,
+    }
   } catch {
-    return undefined
+    return {}
   }
 }
 
 export const inject = []
+
+/** 诊断日志：每次 llm/stream 决策写一行 JSON（fail-open，1 MB 后截断重来）。 */
+function note(line) {
+  try {
+    const home = process.env.DSH_HOME
+    if (!home) return
+    const dir = home + '/logs'
+    fs.mkdirSync(dir, { recursive: true })
+    const file = dir + '/toolface-guard.log'
+    try { if (fs.statSync(file).size > 1048576) fs.writeFileSync(file, '') } catch { /* 首次写 */ }
+    fs.appendFileSync(file, JSON.stringify(line) + '\n')
+  } catch { /* 诊断失败不得影响派发 */ }
+}
 
 /**
  * 挂 llm/stream 网守（只改请求，next() 只调一次）。
  * @param ctx - 插件上下文（用 ctx.get('sessions') 做可选读取，不声明强注入）
  * @param config - 见 Config
  */
+/**
+ * 在会话事件层「重开 series」——**这是唯一改得动的缝**。
+ *
+ * `llm/stream` 收到的 options 是 `Object.freeze` 的（agent.ts:733-741），改不动；
+ * 但 `Session.append` 是公开 API，而 `ToolHistoryProjection` 只认三种重开系列的方式：
+ * `reason === 'series'` / `startsSeries` / 同名工具定义变了。
+ * ⇒ 追加一条 `request/header {reason:'series'}`，把基线重置成**当前面**，
+ * 下一轮投影就不会出现「removal 删光基线 + addition 全延期」。
+ * @param ctx - 插件上下文
+ * @param config - 见 Config
+ */
+function attachSeriesRestart(ctx, config, cutoffMs, proactiveEnabled) {
+  ctx.on('agent/pre-step', async (event, next) => {
+    const decision = await next()
+    try {
+      if (decision !== undefined && decision.kind === 'reject') return decision
+      const agent = event && event.agent
+      const session = agent && agent.session
+      if (session === undefined || session === null) return decision
+      const last = typeof session.requestHeader === 'function' ? session.requestHeader() : undefined
+      if (last === undefined || last === null) return decision
+      const toolsService = ctx.get('tools')
+      if (toolsService === undefined || typeof toolsService.schemas !== 'function') return decision
+      const schemas = toolsService.schemas(agent) || []
+      const baseNames = new Set((last.tools ?? []).map(tool => tool && tool.name))
+      const nowNames = new Set(schemas.map(tool => tool && tool.name))
+      const changed = baseNames.size !== nowNames.size
+        || [...nowNames].some(name => !baseNames.has(name))
+      if (!changed) return decision
+      const header = session.header ?? {}
+      const oldSession = proactiveEnabled && (header.isSeeded === true
+        || (typeof header.createdAt === 'number' && header.createdAt < cutoffMs))
+      if (!oldSession) {
+        note({ sid: session.id, k: 'series-skip', base: baseNames.size, active: nowNames.size, seeded: header.isSeeded === true })
+        return decision
+      }
+      const nextHeader = { config: last.config, ...schemas.length > 0 ? { tools: schemas } : {} }
+      const appended = session.append('request/header', { header: nextHeader, reason: 'series' })
+      note({ sid: session.id, k: 'series', base: baseNames.size, active: nowNames.size, seq: appended && appended.seq, seeded: header.isSeeded === true })
+    } catch (cause) {
+      note({ sid: undefined, k: 'series-error', message: String(cause && cause.message || cause).slice(0, 160) })
+    }
+    return decision
+  }, { global: true })
+}
+
 export function apply(ctx, config) {
   const cutoffMs = parseCutoff(config?.cutoff ?? '2026-11-05T00:00:00+08:00')
   const residentTool = typeof config?.residentTool === 'string' && config.residentTool !== '' ? config.residentTool : 'run_code'
   const predictedEnabled = config?.predicted !== false
   const proactiveEnabled = config?.oldSessionProactive !== false
   const dryRun = config?.dryRun === true
-  const repairMode = config?.repairMode === 'reset' || config?.repairMode === 'append' ? config.repairMode : 'restore'
+  const rawMode = config?.repairMode
+  const repairMode = rawMode === 'series' || rawMode === 'reset' || rawMode === 'append' || rawMode === 'restore' ? rawMode : 'observe'
+
+  if (repairMode === 'series') {
+    attachSeriesRestart(ctx, config, cutoffMs, proactiveEnabled)
+  }
 
   ctx.on('llm/stream', (options, next) => {
     try {
@@ -221,12 +291,28 @@ export function apply(ctx, config) {
       const flipped = predictedEnabled
         && (allDeferred(options.toolHistory, options.tools, 'addition-only')
           || allDeferred(options.toolHistory, options.tools, 'in-history'))
-      const createdAt = sessionCreatedAt(ctx, options.sessionId)
-      const oldSession = proactiveEnabled && createdAt !== undefined && createdAt < cutoffMs
-      if (!flipped && !oldSession) return next()
-      if (dryRun) return next()
+      const info = sessionInfo(ctx, options.sessionId)
+      const createdAt = info.createdAt
+      const oldSession = proactiveEnabled && (info.isSeeded === true || (createdAt !== undefined && createdAt < cutoffMs))
+      const base = Array.isArray(options.toolHistory.tools) ? options.toolHistory.tools.length : -1
+      const adds = Array.isArray(options.toolHistory.updates) ? options.toolHistory.updates.length : -1
+      if (!flipped && !oldSession) {
+        note({ sid: options.sessionId, k: 'skip', flipped, base, adds, active: (options.tools ?? []).length, createdAt, seeded: info.isSeeded === true })
+        return next()
+      }
+      if (dryRun) {
+        note({ sid: options.sessionId, k: 'dryRun', flipped, base, adds, active: (options.tools ?? []).length, createdAt })
+        return next()
+      }
+      if (repairMode === 'series') {
+        // series 模式下这里**只做诊断**：请求对象是冻结的，改不动（见 §11.15）。
+        note({ sid: options.sessionId, k: 'observe', flipped, base, adds, active: (options.tools ?? []).length, createdAt, seeded: info.isSeeded === true })
+        return next()
+      }
       if (repairMode === 'restore') {
-        const { changed } = restoreFace(options)
+        const before = { tools: (options.tools ?? []).length, base, adds }
+        const { changed, faceSize } = restoreFace(options)
+        note({ sid: options.sessionId, k: 'restore', flipped, faceSize, changed, before, createdAt, seeded: info.isSeeded === true })
         if (!changed) armResident(options, residentTool)
       } else if (repairMode === 'reset') {
         if (!resetBaseline(options)) armResident(options, residentTool)
