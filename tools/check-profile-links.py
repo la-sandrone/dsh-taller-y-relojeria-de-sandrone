@@ -269,7 +269,7 @@ def _is_bin_shim(rel_display: str) -> bool:
 def _group_of(real: Path, live_checkout: Path) -> str:
     # 只取顶层那一段：按整包切会碎成几百组各 1 个，没法读。
     # 我们要回答的是"它指的是哪棵树"，不是"具体哪个包"。
-    for base, tag in ((live_checkout.parent, "原始代码研究/"), (Path("/mnt/d"), "<挂载d>:/")):
+    for base, tag in ((live_checkout.parent, "原始代码研究/"), (Path("<挂载d>"), "<挂载d>:/")):
         try:
             return tag + real.relative_to(base.resolve()).parts[0]
         except (ValueError, IndexError):

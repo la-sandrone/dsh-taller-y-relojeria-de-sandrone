@@ -210,7 +210,7 @@ bundles 共 **19 条**（`profiles/web/package.json`），`patchReload: "live"`�
 
 | 位置 | 内容 | 处置 |
 |---|---|---|
-| `:31,38,46,53,60,67,74,89,98,114` | `<挂载d>:/DataServices/MCP/mcp启动器.py` ×10（全部 MCP） | 原样（`/mnt/d` 仍在） |
+| `:31,38,46,53,60,67,74,89,98,114` | `<挂载d>:/DataServices/MCP/mcp启动器.py` ×10（全部 MCP） | 原样（`<挂载d>` 仍在） |
 | `:150` | `cache/session-query.sqlite`（home 内） | **必须改写**，否则两个 home 抢同一 SQLite 索引 |
 | `:271` | `<挂载d>:/游戏/SteamLibrary/...`（壁纸引擎素材） | 原样 |
 | `:303,1095,2074,2895,3734` | `home/patches/0.1.7-agent-presets/cwd-fallback.mjs` ×5 | 随 home 复制 |
@@ -487,7 +487,7 @@ ls dsh-domus-0.2.1-rc.2/profiles/web/node_modules/@linxin666/dsh-remote-web-ui/l
 | 2026-11-04 | 源码取证（8 问）+ 补丁静态预判 | ✅ 见 §2.1 / §四，**推翻了本笔记三处判断** |
 | 2026-11-04 | 补丁：Markdown 重写（`UserText-0.2.2.patch`，+24/−2）+ 空回复兜底重放 | ✅ 两个补丁源与产物都在位；sandbox-scratch 移到 `补丁/历史/`（上游已有 `additionalWritableRoots`） |
 | 2026-11-04 | `stage-upgrade-home.py --src 0.2.1-rc.2 --dst 0.2.2-rc.1 --apply` | ✅ 路径重写 27 处 / 残留 0 / 有意保留 5 文件 / `cordis.patch.yml` 新路径 6 处 |
-| 2026-11-04 | `repair-profile-links --names-from 0.2.1-rc.2 --apply` | ✅ 写入 265 条拦截链接；1 个包名（`dsh-omnibus-search`）按 `--source-checkout` 重指 `/mnt/d` |
+| 2026-11-04 | `repair-profile-links --names-from 0.2.1-rc.2 --apply` | ✅ 写入 265 条拦截链接；1 个包名（`dsh-omnibus-search`）按 `--source-checkout` 重指 `<挂载d>` |
 | 2026-11-04 | 新 home 装依赖（`web-all 0.4.15` / `session-id 0.4.15` / `tool-session-query 0.2.2-rc.1`） | ✅ 10.1 s；`dsh-remote-web-ui` **不在** node_modules（全家桶已移除，D5 自然满足） |
 | 2026-11-04 | 配置改写：撤 `web-ui-remote-web-ui`、启 `web-ui-remote-bridge`、加 3 行覆盖 | ✅ `check_patch_layers`：248 个 id / 无重复 / 可以启动 |
 | 2026-11-04 | `./start-web.py --try v0.2.2-rc.1 --port 9011` | ✅ **起来了**（见 §11.4）；`disabling profile plugin` = 0；`force-h1 applied:true` 且 `dshVersion=v0.2.2-rc.1` |
@@ -585,7 +585,7 @@ cd dsh-domus-0.2.2-rc.1 && git init && git add -A && git commit -m '0.2.2-rc.1 h
 | `dsh-plugin-wallpaper-engine` | 1.3.1 | **1.4.0** | cordis ^4.0 |
 | `@changfenhuang/dsh-annotation` | 1.4.10 | **1.4.11** | cordis ^4.0.0-rc.7 / ^4.0 |
 
-未升：`dsh-deepread 1.0.1`（已最新）、`dsh-linkdigest`（`github:` 源，按提交不按版本）、`dsh-omnibus-search`（`link:/mnt/d` 本地源）、`@linxin666/*`（0.4.15 已与 0.2.2 对齐）。
+未升：`dsh-deepread 1.0.1`（已最新）、`dsh-linkdigest`（`github:` 源，按提交不按版本）、`dsh-omnibus-search`（`link:<挂载d>` 本地源）、`@linxin666/*`（0.4.15 已与 0.2.2 对齐）。
 
 **两道门禁都过**（升级后立刻验）：
 
