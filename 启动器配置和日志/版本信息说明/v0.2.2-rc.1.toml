@@ -1,0 +1,35 @@
+# 版本信息说明 · v0.2.2-rc.1
+#
+# 结构与语义定义见同目录的 v0.1.7-rc.2.toml。
+# 文件名必须逐字节等于 原始代码研究/v0.2.2-rc.1 与 当前配置.toml 里的 version。
+#
+# 状态：2026-11-04 新建，**试跑阶段**（阶段 6）。尚未写进 当前配置.toml。
+#   调查与方案：用户笔记/升级/DSH升级-0.2.2-rc.1-调查与方案.md
+
+version = "v0.2.2-rc.1"
+
+[upstream]
+# 检出 package.json 里的 "version"
+version = "0.2.2-rc.1"
+# 检出 HEAD 上的 git tag（git -C 原始代码研究/v0.2.2-rc.1 describe --tags 实测）
+git_tag = "dsh-v0.2.2-rc.1"
+
+[profile]
+# 该基座的 profile 必须具备的标记：在
+#   <home>/profiles/web/cordis.patch.yml
+# 里【逐字】查找，一个都不能少。
+#
+# 本次用带版本号的真标记，能证到"这一代"；0.2.1 的旧标记仍留在文件里（链式可见）。
+required_markers = ["0.2.2 迁移物（staged-from-0.2.1-rc.2）"]
+
+# ─── 历史 ───────────────────────────────────────────────────────────
+#
+# 2026-11-04  新检出就绪（shallow clone，tag dsh-v0.2.2-rc.1）。
+#             build 10 门全过 136.2s；system.node 落 native/system/packages/linux-x64/bin/glibc/。
+#             补丁：Markdown 渲染按 0.2.2 结构重写（UserText-0.2.2.patch）；空回复兜底原样重放；
+#                   sandbox-scratch 退役（上游已有 additionalWritableRoots）→ 补丁/历史/。
+#             全家桶按 home 分开（D6）：本 home = web-all 0.4.15（peer >=0.2.2-rc.1）；
+#                   现役 0.2.1-rc.2 保持 0.4.8 不动。
+#             profile：撤销 web-ui-remote-web-ui（D5）、启用 web-ui-remote-bridge、
+#                   新增 tool-executor-ptc / fs-observation-policy 两处覆盖（A2 / B1）。
+#             回滚：删除本 home 即可；现役 0.2.1 未受任何改动。

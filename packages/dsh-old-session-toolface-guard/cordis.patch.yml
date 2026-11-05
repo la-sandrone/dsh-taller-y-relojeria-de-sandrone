@@ -1,0 +1,5 @@
+# dsh-old-session-toolface-guard bundle patch —— 把守门插件挂进 web roster。
+# 无 client 半区；host 半区只监听 llm/stream，不注册任何工具或服务。
+- insert:
+    - id: old-session-toolface-guard
+      name: dsh-old-session-toolface-guard

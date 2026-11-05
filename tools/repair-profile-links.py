@@ -85,8 +85,8 @@ HARNESS = _resolve_harness()
 # 草稿区名可被 DSH_SCRATCH_DIR 覆盖（发布件里的默认值由导出管线改成中性名）
 SCRATCH = HARNESS / os.environ.get("DSH_SCRATCH_DIR", ".dsh-scratch")
 
-DEFAULT_HOME = "dsh-domus-0.1.7-rc.2"
-DEFAULT_SOURCE = "原始代码研究/v0.1.7-rc.2"
+DEFAULT_HOME = "dsh-domus-0.2.2-rc.1"
+DEFAULT_SOURCE = "原始代码研究/v0.2.2-rc.1"
 
 SKIP_TOP = {".bin", ".pnpm", ".cache", ".modules.yaml"}
 

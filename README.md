@@ -25,6 +25,8 @@
 | 目录 / 文件 | 里面是什么 | 怎么用 |
 |---|---|---|
 | **`patches/`** | 源码补丁的版本无关存档：`manifest.toml` + 可 `git apply` 的 `.patch` + 为什么 | 用 [`tools/dsh-ui-patches.py`](tools/dsh-ui-patches.py) 核对/重放；也可手工 `git apply` |
+| **`patches/` 里的 `sandbox-scratch/` 已退役** | 上游 0.2.2 用 `sandbox-policy.additionalWritableRoots` 原样实现了那个设计（同样是「由 deployment 给落点」）⇒ 不再需要打补丁 | 见 [`patches/sandbox-scratch/RETIRED.md`](patches/sandbox-scratch/RETIRED.md) |
+| **`packages/dsh-old-session-toolface-guard/`** | **老会话守门**：拦住「工具面翻转 ⇒ 全部 `defer_loading` ⇒ DeepSeek 400」。做法不是补假占位工具，而是**在 `llm/stream` 派发前把翻面前那张工具面原样发回**（旧基线 ∪ 当前活跃，并关掉 tool update 机制） | `pnpm add file:packages/dsh-old-session-toolface-guard`（见包内 README；配置在 home 的 `profiles/web/cordis.patch.yml`） |
 | **`packages/dsh-sandrone-ui-patches/`** | UI 补丁包：以 **client 半区注入全局 CSS** 的方式改界面（字体方案 / 字号倍率 / 随包可变字体 / 皮肤压制 / 长会话渲染剪枝） | `pnpm add file:packages/dsh-sandrone-ui-patches`（见包内 README） |
 | **`skins/navia/`** | 一个皮肤：浅底侧栏 + 深底主区 + 毛玻璃（**图自备**） | 放进 home 的 `skins/` 下，重启 |
 | **`notes/`** | 脱敏后的实操笔记：排版、皮肤、升级、部署、issue、提示词、检索 | 读**为什么**；配方数值会随版本过期，判据不会 |
@@ -40,9 +42,9 @@
 
 | 补丁 | 一句话 | 文档 |
 |---|---|---|
-| **Markdown 渲染** | 让**用户消息**按 Markdown 渲染（这是上游的产品选择，本地选了另一条） | [`patches/Markdown渲染/`](patches/Markdown渲染/) |
+| **Markdown 渲染** | 让**用户消息**按 Markdown 渲染（这是上游的产品选择，本地选了另一条）；含 `UserText-0.2.1.patch` 与 **`UserText-0.2.2.patch`** 两份基线 | [`patches/Markdown渲染/`](patches/Markdown渲染/) |
 | **空回复兜底** | 让「只吐思考链、`finish=stop`」的退化响应变成**可重试的 `EMPTY_RESPONSE`**，而不是一条静默落盘、界面上什么都不显示的空白回复 | [`patches/空回复兜底/dsh-empty-response-content.md`](patches/空回复兜底/dsh-empty-response-content.md) |
-| **沙盒 scratch 落点** | 让 `workspace-write` 沙盒拥有一个**跨调用存活**的临时目录 —— bwrap 在 `--tmpfs /tmp` 之后把宿主的一个子目录 bind 回去（其余 `/tmp` 保持每次全新）；顺带解决「沙盒里 `mkdir /tmp/x` 下次调用就没了」 | [`patches/sandbox-scratch/`](patches/sandbox-scratch/) |
+| ~~**沙盒 scratch 落点**~~ **已退役** | 让 `workspace-write` 沙盒拥有一个**跨调用存活**的临时目录 —— bwrap 在 `--tmpfs /tmp` 之后把宿主的一个子目录 bind 回去（其余 `/tmp` 保持每次全新）；顺带解决「沙盒里 `mkdir /tmp/x` 下次调用就没了」 | [`patches/sandbox-scratch/`](patches/sandbox-scratch/) |
 
 后者的排查过程值得单看：一场真实会话 153 轮里 **13 轮**收尾只产出 reasoning 块、正文一个 token 都没生成，而**两层空响应守卫都在问错的问题**（数的是「有没有开过块」而不是「有没有可交付内容」）——其中一处还有一条**把错误行为写成契约的测试**（`keeps a thinking-only stop successful`）。文档里有完整的取证链。
 

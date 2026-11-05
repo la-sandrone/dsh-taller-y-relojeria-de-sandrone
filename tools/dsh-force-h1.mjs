@@ -1,4 +1,12 @@
-// tools/dsh-force-h1.mjs —— 把 Node 内置 fetch 钉在 HTTP/1.1（DSH 的 H2 缓解补丁）。
+// tools/dsh-force-h1.mjs —— 把 Node 内置 fetch 钉在「HTTP/1.1 + IPv4」
+//   （DSH 的传输层缓解补丁；名字沿用旧名，改文件名要动 NODE_OPTIONS 注入与
+//     dsh_instance_env.py 的 _OWN_PRELOADS 多处，不值得）。
+//
+// 两条钉子为什么在同一个 preload：它们都在给运营商链路兜底，且都作用于
+//   undici 的全局 dispatcher —— 分成两个 preload 只会互相覆盖。
+//   ① allowH2:false —— H2 会话复用会把一次 TLS 抖动放大成整条连接报废。
+//   ② connect.family=4 —— 中移动的 IPv6 路径到 Cloudflare 是建连黑洞
+//      （实测出现 UND_ERR_CONNECT_TIMEOUT）。见下方构造处的实测数据。
 //
 // 为什么需要：undici v8 起 allowH2 默认 true（官方 v7→v8 迁移文档确认）。
 //   H2 session 一旦因一次 TLS 抖动被销毁，undici 会【继续复用它】→ 之后每一发
@@ -120,13 +128,29 @@ if (mode === 'off') {
     })
     console.error('[dsh-force-h1] 找不到可用的 undici —— H1 未生效！见 tools/DSH-升级铁律.md')
   } else {
-    const agent = new found.mod.Agent({ allowH2: false })
+    // IPv4 钉死（2026-11-04）：与 allowH2 同属「传输层策略」——两者都是给
+    //   运营商链路兜底，分成两个 preload 只会互相覆盖，故在这一处一起钉。
+    //   依据：中移动的 IPv6 路径到 Cloudflare 是**建连黑洞**，不是「慢一点」。
+    //   opencode.ai 连发 4 次的实测（undici 8.11.2，2026-11-04）：
+    //     默认（allowH2 缺省 true，autoSelectFamily 缺省 true）
+    //       8394ms → UND_ERR_CONNECT_TIMEOUT@10490ms → 3736ms → 1435ms
+    //     allowH2:false（本补丁原样）
+    //       4382ms → 2877ms → 284ms → 277ms
+    //     allowH2:false + connect.family=4（现在这行）
+    //       879ms → 1062ms → 887ms → 296ms   ← 冷启动就稳，无超时
+    //   connect.family=4 让 dns.lookup 只取 A 记录，autoSelectFamily 无事可做，
+    //   所以它是「不解析 AAAA」而非「解析了但不用」——这是与
+    //   --dns-result-order=ipv4first 的本质区别（后者只改排序，
+    //   Happy Eyeballs 照样会去试 IPv6）。
+    const agent = new found.mod.Agent({ allowH2: false, connect: { family: 4 } })
     found.mod.setGlobalDispatcher(agent)
-    globalThis.__DSH_H1__ = { mode, modeSource, forced: true, resolvedFrom: found.from }
+    globalThis.__DSH_H1__ = {
+      mode, modeSource, forced: true, resolvedFrom: found.from, ipv4Only: true,
+    }
     log({
       event: 'force-h1', applied: true, mode, modeSource, argv,
-      dshVersion: activeVersion(), resolvedFrom: found.from,
+      dshVersion: activeVersion(), resolvedFrom: found.from, ipv4Only: true,
     })
-    console.error(`[dsh-force-h1] 已强制 HTTP/1.1 (allowH2=false) pid=${process.pid}`)
+    console.error(`[dsh-force-h1] 已强制 HTTP/1.1 + IPv4-only pid=${process.pid}`)
   }
 }

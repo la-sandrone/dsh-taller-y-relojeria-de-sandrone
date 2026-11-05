@@ -2,9 +2,36 @@
 
 文件名: 用户笔记/部署/沙盒scratch落点.md
 摘要: `workspace-write` 下 `/tmp` 是**每次调用全新**的 tmpfs ⇒ 跨调用临时目录不存在。用 bwrap 的挂载顺序（later wins）把一个宿主子目录绑回去解决。含启动器侧守卫、**一处未解决的告知通路缺口**、以及实录的错账。
-依赖: 补丁本体在 `补丁/sandbox-scratch/`；启动器改动在 `start-web.py`
+依赖: 补丁本体已归档 `补丁/历史/sandbox-scratch-已退役-20261104/`；现役配置在 `profiles/web/cordis.patch.yml` 的 `sandbox-policy` 行；启动器守卫在 `start-web.py`
+状态: **已退役（2026-11-04）** —— 上游 0.2.2 的 `additionalWritableRoots` 原样实现了本设计。下文保留为**设计记录与判据**，不是可执行说明。
 
 ---
+
+> **一句话结局**：这个补丁当年要解决的是「不开工作区、也要一个**跨调用存活**的草稿纸区」。
+> 上游 0.2.2 加了 `sandbox-policy.additionalWritableRoots`（**多根列表、由 deployment 给落点**，
+> 与我们当年的设计取向一致），配置一条就等价 —— 补丁因此退役，**不是被否定**。
+>
+> **取代它的配置**（`profiles/web/cordis.patch.yml`，已生效）：
+>
+> ```yaml
+> - id: sandbox-policy
+>   config:
+>     mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+>     workspaceRoot: !!js process.cwd()
+>     additionalWritableRoots:
+>       - /tmp/.dsh-tmp
+> ```
+>
+> **为什么这一条就够**：bwrap **先** `--tmpfs /tmp`，**再**按 `workspaceWritableRoots()` 逐个
+> `--bind`（`packages/sandbox/sandbox-local/src/profiles.ts:19-21`；`packages/sandbox/sandbox/src/roots.ts:84`）
+> ⇒ `/tmp/.dsh-tmp` 落回宿主、**跨调用存活**，`/tmp` 其余仍每次全新 —— 与当年补丁逐字等价。
+> 上游还多给三样：每次调用校验（不存在／非目录／符号链接 ⇒ `SANDBOX_INVALID_ROOT`，命令启动前就拦）、
+> 多根列表、以及 `read-only` 下**明确不授予**（`roots.ts:84` 对非 `workspace-write` 直接返回 `[]`）。
+>
+> **启动器侧守卫继续有效且本来就对上了**：`start-web.py:969` 的 `scratch_root()` 默认返回
+> `/tmp/.dsh-tmp`；`guard_scratch_root()` 开机 mkdir + **探针测写**（只 mkdir 不测写会漏掉「存在但写不进」），
+> 建不出来就拒绝开机。**System Prompt 也已同步**：五个 preset 都写明
+> 「未获 `danger-full-access` 时草稿一律写 `/tmp/.dsh-tmp/`」。
 
 ## 一、要解决的问题
 
@@ -13,6 +40,8 @@
 > workspace-write mounts an EPHEMERAL /tmp: **the write succeeds inside, the host /tmp stays untouched**
 
 ⇒ **沙盒里 `/tmp` 的寿命是"一次调用"**：`mkdir /tmp/foo` 下一次工具调用就看不见。
+
+> ⚠️ **下面这段在 0.2.1 时成立，0.2.2 起不成立**（`additionalWritableRoots` 已入 `Config`）。保留原文是为了让判据可复核，不要据此打补丁。
 
 而**没有任何配置能加可写根**：`sandbox-policy` 的 `Config` 只有 `mode` / `workspaceRoot`；
 `sandbox/src/roots.ts` 的 `writableRoots()` 是硬编码的 `{workspaceRoot, '/tmp', tmpdir()}`

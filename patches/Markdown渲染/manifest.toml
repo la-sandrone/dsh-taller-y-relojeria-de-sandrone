@@ -42,7 +42,7 @@ why = "用户大量依赖 markdown 语法输入；官方默认按字面渲染（
 
 [[target]]
 file = "packages/client/ui-conversation/src/client/user-text/UserText.tsx"
-patch = "UserText-0.2.1.patch"
+patch = "UserText-0.2.2.patch"
 applied_marker = "USER_MARKDOWN_LABELS"
 
 # ── 升级核对：上游漂移就 fail-loud ────────────────────────────────

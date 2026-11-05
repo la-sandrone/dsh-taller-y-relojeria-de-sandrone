@@ -1,0 +1,20 @@
+{
+  "name": "dsh-old-session-toolface-guard",
+  "description": "拦住「工具面翻转后全部 defer_loading」导致的永久 400：在 llm/stream 派发前把会话基线里补一条真实工具（非延期），使投影至少留一个可加载声明；并对老会话挂一次性重派发兜底。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.2-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}
