@@ -783,3 +783,24 @@ options.toolHistory = undefined                       // 关掉中途新增/延�
 | `append` | 只补一条进旧基线 | 最小改动 |
 
 **纪律沉淀**：`AGENTS.md` 新增两条 —— 「上游反馈纪律」（必查 Discussions）、「报会话 id 必须带标题」（配 `tools/session-title.py`）。
+
+### 11.13 System Prompt 的正身在哪（2026-11-05，纠错）
+
+**先犯错**：我把「沙盒草稿区」那节写进了 `dsh-domus-*/.agent-presets/*/agent.cordis.yml`（5 份），
+以为那就是活配置。**用户当场纠正**：要落回 `profiles/web/cordis.patch.yml` 才叫生效。
+
+**核实（不是听说，是查）**：
+
+- harness 检出里搜 `.agent-presets` —— **零命中**（`grep -rn '\.agent-presets' packages apps`）；
+- `profiles/web/cordis.patch.yml:249` 有 `agent-preset-registry`，`:292` 起是各 preset 行，`:306` 是 `- id: persona`；
+- 导出管线的 `extract` 规则 `home_src` 指向的也正是这份 profile patch —— 它本来就是按「活配置」设计的。
+
+⇒ **`.agent-presets/` 只是镜像/staging（`tools/stage-upgrade-home.py` 会拷它），真正被加载的是 profile patch 里的 `persona` 块。**
+现在两处都同步了（镜像保持对齐，若哪天重跑 staging 也不会退回旧文本）。
+
+**三条配套纪律**：
+
+1. **改提示词就改 `profiles/web/cordis.patch.yml` 的 persona 块**（16 空格缩进，块标量内）；
+2. **语法检查必须放行 `!!js`**：`yaml.safe_load` 一定失败，要用多构造器兜住 `tag:yaml.org,2002:js`；
+   而真正权威的解析器是项目自带的 `tools/check_patch_layers.py`（它跑通才算能启动）。
+3. **那份文件里全是手改**：只做**增量插入**，改完用 `diff | grep -c '^<'` 证明**删除行数为 0**（本次 5 处插入、+50 行、0 删除）。
